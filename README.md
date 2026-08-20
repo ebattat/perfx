@@ -23,7 +23,7 @@ cp .env.example .env
 perfx
 ```
 
-The agent uses Claude by default (via Vertex AI). Switch models:
+Switch models:
 
 ```bash
 perfx --model gemini
@@ -31,6 +31,59 @@ perfx --model claude
 ```
 
 > Alternatively: `python run.py` (without install)
+
+---
+
+## Choosing a backend
+
+**Option 1 — Anthropic API (recommended for external users)**
+
+Get an API key from [console.anthropic.com](https://console.anthropic.com) and set it in `.env`:
+
+```
+ANTHROPIC_API_KEY=your-api-key
+```
+
+Then run:
+
+```bash
+perfx --model claude
+```
+
+**Option 2 — Google Vertex AI (Red Hat internal)**
+
+Requires a GCP project with Claude enabled and `gcloud` authenticated:
+
+```bash
+gcloud auth application-default login
+```
+
+Set in `.env`:
+
+```
+CLAUDE_CODE_USE_VERTEX=1
+ANTHROPIC_VERTEX_PROJECT_ID=your-gcp-project-id
+```
+
+Then run:
+
+```bash
+perfx --model claude
+```
+
+**Option 3 — Gemini**
+
+Get an API key from [Google AI Studio](https://aistudio.google.com/app/apikey) and set it in `.env`:
+
+```
+GEMINI_API_KEY=your-api-key
+```
+
+Then run:
+
+```bash
+perfx --model gemini
+```
 
 ---
 
