@@ -1,0 +1,52 @@
+# Linux VM Recommended Configuration
+# Source: https://github.com/redhat-performance/benchmark-runner/blob/main/benchmark_runner/common/template_operations/templates/bootstorm/internal_data/bootstorm_vm_template.yaml
+# Reference: https://developers.redhat.com/blog/2026/05/06/best-practice-configuration-and-tuning-linux-and-windows-vms#vm_definition
+# Use this as the reference when checking a customer Linux VM configuration.
+
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+spec:
+  # Always apply a VirtualMachineClusterPreference — applies critical optimizations automatically
+  # List available: oc get VirtualMachineClusterPreference
+  preference:
+    name: <rhel.9.virtio or appropriate preference>
+  template:
+    spec:
+      domain:
+        cpu:
+          cores: <set>
+          sockets: 1
+          threads: 1
+        devices:
+          disks:
+          - disk:
+              bus: virtio             # virtio = best performance
+                                      # NEVER use bus: sata
+            name: containerdisk
+          - disk:
+              bus: virtio
+            name: cloudinitdisk
+          interfaces:
+          - masquerade: {}
+            model: virtio             # NEVER use model: e1000e
+          networkInterfaceMultiqueue: true
+        ioThreadsPolicy: supplementalPool   # OCP 4.19+ — offloads IO from vCPU threads
+        resources:
+          requests:
+            memory: <set>
+            cpu: <set>
+          limits:
+            memory: <set>             # limits must match requests for guaranteed QoS
+            cpu: <set>
+      evictionStrategy: LiveMigrate
+      terminationGracePeriodSeconds: 180
+      volumes:
+      - containerDisk:
+          image: <rhel-or-fedora-container-disk>
+        name: containerdisk
+      - cloudInitNoCloud:
+          userData: |-
+            #cloud-config
+            password: <set>
+            chpasswd: { expire: False }
+        name: cloudinitdisk

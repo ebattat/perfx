@@ -1,6 +1,6 @@
 import os
 from jira import JIRA, JIRAError
-from perfbot.logger import get_logger
+from perfx.logger import get_logger
 
 log = get_logger("jira")
 

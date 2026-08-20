@@ -1,0 +1,125 @@
+import sys
+import os
+import argparse
+from datetime import datetime
+from pathlib import Path
+from dotenv import load_dotenv
+from perfx.logger import setup_logging, get_logger
+from perfx.client import Agent
+
+_env_path = Path(__file__).parent.parent / ".env"
+load_dotenv(_env_path)
+
+log = get_logger("main")
+
+REPORTS_DIR = Path(os.environ.get("PERFX_LOGS_DIR", Path(__file__).parent.parent / "logs"))
+
+
+def _save_report(content: str, fmt: str, output_dir: str = None):
+    report_dir = Path(output_dir) if output_dir else REPORTS_DIR
+    report_dir.mkdir(exist_ok=True)
+    ext = "md" if fmt == "markdown" else "log"
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    path = report_dir / f"perfx_report_{timestamp}.{ext}"
+    path.write_text(content)
+    log.info("Report saved to %s", path)
+    print(f"\nReport saved to: {path}")
+
+
+def _cmd_logs(args):
+    from perfx.analyzer import analyze
+    from perfx.skills.registry import SkillRegistry
+
+    if getattr(args, "list_skills", False):
+        registry = SkillRegistry()
+        print("Available skills:")
+        for skill in registry.list():
+            print(f"  {skill.name:15s} — {skill.description}")
+        return
+
+    source = args.logs
+    if not source:
+        log.error("provide a folder/file path with --logs")
+        sys.exit(1)
+
+    skill_names = [s.strip() for s in args.skill.split(",")] if args.skill else None
+    fmt = args.output or "summary"
+
+    log.info("Analyzing: %s", source)
+    report = analyze(source, skill_names=skill_names)
+
+    if fmt == "markdown":
+        content = report.to_markdown()
+    elif fmt == "text":
+        content = report.to_text()
+    else:
+        content = report.to_summary()
+
+    print(content)
+    _save_report(content, fmt, output_dir=getattr(args, "output_dir", None))
+
+
+def main():
+    setup_logging()
+
+    parser = argparse.ArgumentParser(description="PerfX — performance knowledge base agent")
+    parser.add_argument("--model", "-m", choices=["gemini", "claude"], default=None)
+    parser.add_argument("--logs", metavar="PATH", help="Analyze log files (no agent required)")
+    parser.add_argument("--skill", "-s", help="Comma-separated skill names (default: all)")
+    parser.add_argument("--output", "-o", choices=["text", "markdown", "summary"], default="summary")
+    parser.add_argument("--output-dir", metavar="DIR", help="Directory to save report (default: logs/)")
+    args = parser.parse_args()
+
+    if args.model:
+        os.environ["PERFBOT_MODEL"] = args.model
+
+    if args.logs:
+        _cmd_logs(args)
+        return
+
+    model_name = os.environ.get("PERFBOT_MODEL", "claude").lower()
+    print(f"PerfX Agent (powered by {model_name.capitalize()}). Type 'exit' or Ctrl-C to quit.")
+    from perfx.client import _parse_repos
+    repos = _parse_repos()
+    if repos:
+        print(f"Configured repos: {', '.join(repos)}")
+    print()
+
+    # open session log
+    REPORTS_DIR.mkdir(exist_ok=True)
+    session_ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    session_log = REPORTS_DIR / f"perfx_chat_{session_ts}.log"
+    session_file = open(session_log, "w")
+    session_file.write(f"PerfX Chat Session — {session_ts}\n{'='*60}\n\n")
+    print(f"Session log: {session_log}\n")
+
+    agent = Agent()
+    while True:
+        try:
+            user_input = input("You: ").strip()
+        except (KeyboardInterrupt, EOFError):
+            session_file.close()
+            print("\nBye!")
+            sys.exit(0)
+
+        if not user_input:
+            continue
+        if user_input.lower() in {"exit", "quit"}:
+            session_file.close()
+            print("Bye!")
+            sys.exit(0)
+
+        try:
+            response = agent.chat(user_input)
+            print(f"\nAgent: {response}\n")
+            session_file.write(f"You: {user_input}\n\nAgent: {response}\n\n{'─'*60}\n\n")
+            session_file.flush()
+        except Exception as exc:
+            log.exception("Agent error")
+            print(f"\n[Error] {exc}\n")
+            session_file.write(f"You: {user_input}\n\n[Error]: {exc}\n\n{'─'*60}\n\n")
+            session_file.flush()
+
+
+if __name__ == "__main__":
+    main()

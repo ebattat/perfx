@@ -1,7 +1,7 @@
 """Integration tests for agent/jira/tools.py"""
 import os
 import pytest
-from perfbot.jira.jira import (
+from perfx.jira.jira import (
     jira_get_issue,
     jira_search_issues,
 )
@@ -61,5 +61,3 @@ class TestJiraGetIssue:
     def test_invalid_key_raises(self):
         with pytest.raises(Exception):
             jira_get_issue("INVALID-00000")
-
-

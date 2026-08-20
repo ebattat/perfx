@@ -1,0 +1,42 @@
+language: en-US
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - main
+
+  path_instructions:
+    - path: "perfx/**/*.py"
+      instructions: |
+        - Ensure coverage stays ≥ 90%. Every code change must have a corresponding test.
+        - Test files mirror source: perfx/foo.py → tests/perfx/test_foo.py
+        - No secrets or credentials in code — use environment variables or .env (gitignored).
+        - Follow existing patterns: pure functions, no global state, clear SEVERITY levels.
+
+    - path: "skills/**/*.py"
+      instructions: |
+        - Each skill script must output SEVERITY, FINDINGS, RECOMMENDATION, and SUMMARY sections.
+        - Skills must not require external API calls — local file parsing only.
+        - Add corresponding test in tests/perfx/skills/test_<skill>.py.
+
+    - path: "tests/**/*.py"
+      instructions: |
+        - Use pytest with class-based grouping.
+        - Integration tests must skip gracefully when credentials are missing, not fail.
+        - Jira JQL must always be bounded (include `project is not EMPTY`).
+
+    - path: ".github/workflows/*.yml"
+      instructions: |
+        - CI must run on Python 3.11, 3.12, and 3.13.
+        - Coverage threshold must stay at --cov-fail-under=90.
+
+chat:
+  auto_reply: true

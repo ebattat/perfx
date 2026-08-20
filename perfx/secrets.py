@@ -1,11 +1,14 @@
 import subprocess
 import os
+from perfx.logger import get_logger
+
+log = get_logger("secrets")
 
 
 def _keychain_get(account: str) -> str | None:
     try:
         result = subprocess.run(
-            ["security", "find-generic-password", "-s", "perfbot", "-a", account, "-w"],
+            ["security", "find-generic-password", "-s", "perfx", "-a", account, "-w"],
             capture_output=True, text=True,
         )
         if result.returncode == 0:
@@ -26,4 +29,4 @@ def load_secrets():
             else:
                 missing.append(key)
     if missing:
-        print(f"[warn] Not found in Keychain or env: {', '.join(missing)}")
+        log.warning("Not found in Keychain or env: %s", ', '.join(missing))

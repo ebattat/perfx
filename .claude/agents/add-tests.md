@@ -1,6 +1,6 @@
 ---
 name: add-tests
-description: Add pytest integration tests for a new or changed source file in the perfbot package. Mirrors the source structure under tests/perfbot/.
+description: Add pytest integration tests for a new or changed source file in the perfx package. Mirrors the source structure under tests/perfx/.
 ---
 
 When adding tests for a source file in this project, follow these rules:
@@ -9,9 +9,9 @@ When adding tests for a source file in this project, follow these rules:
 
 | Source file | Test file |
 |---|---|
-| `perfbot/github/github.py` | `tests/perfbot/github/test_github.py` |
-| `perfbot/jira/jira.py` | `tests/perfbot/jira/test_jira.py` |
-| `perfbot/foo/bar.py` | `tests/perfbot/foo/test_bar.py` |
+| `perfx/github/github.py` | `tests/perfx/github/test_github.py` |
+| `perfx/jira/jira.py` | `tests/perfx/jira/test_jira.py` |
+| `perfx/foo/bar.py` | `tests/perfx/foo/test_bar.py` |
 
 Always create `__init__.py` files for any new test directories.
 
@@ -59,7 +59,7 @@ jira_search_issues("project is not EMPTY order by created DESC")
 
 After creating or updating a test file, always run:
 ```bash
-cd ~/PycharmProjects/PerfBot/perfbot
+cd ~/PycharmProjects/PerfX/PerfX
 source .venv/bin/activate
 pytest <test_file_path> -v
 ```

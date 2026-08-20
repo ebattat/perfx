@@ -1,5 +1,8 @@
 from google.genai import types as gtypes
-from perfbot.github.github import (
+from perfx.vm_config_tool import check_vm_config, check_linux_vm_config
+from perfx.knowledge_tool import read_rules, read_file
+from perfx.gdrive.gdrive import list_gdrive_folder, read_gdrive, search_gdrive
+from perfx.github.github import (
     github_get_issue,
     github_list_issues,
     github_search_issues,
@@ -8,7 +11,7 @@ from perfbot.github.github import (
     github_search_code,
     github_get_file,
 )
-from perfbot.jira.jira import (
+from perfx.jira.jira import (
     jira_get_issue,
     jira_search_issues,
     jira_create_issue,
@@ -17,6 +20,13 @@ from perfbot.jira.jira import (
 )
 
 DISPATCH = {
+    "read_rules": read_rules,
+    "read_file": read_file,
+    "read_gdrive": read_gdrive,
+    "list_gdrive_folder": list_gdrive_folder,
+    "search_gdrive": search_gdrive,
+    "check_vm_config": check_vm_config,
+    "check_linux_vm_config": check_linux_vm_config,
     "github_get_issue": github_get_issue,
     "github_list_issues": github_list_issues,
     "github_search_issues": github_search_issues,
@@ -34,6 +44,116 @@ DISPATCH = {
 TOOL_DECLARATIONS = [
     gtypes.Tool(
         function_declarations=[
+            # ── Google Drive ─────────────────────────────────────────────────
+            gtypes.FunctionDeclaration(
+                name="list_gdrive_folder",
+                description="List all files in a Google Drive folder by folder ID or URL.",
+                parameters=gtypes.Schema(
+                    type=gtypes.Type.OBJECT,
+                    properties={
+                        "folder_id": gtypes.Schema(type=gtypes.Type.STRING,
+                                                    description="Google Drive folder ID or full URL"),
+                    },
+                    required=["folder_id"],
+                ),
+            ),
+            gtypes.FunctionDeclaration(
+                name="read_gdrive",
+                description="Read a file from Google Drive by file ID or full URL. Supports Google Docs, Sheets, plain text files.",
+                parameters=gtypes.Schema(
+                    type=gtypes.Type.OBJECT,
+                    properties={
+                        "file_id": gtypes.Schema(type=gtypes.Type.STRING,
+                                                  description="Google Drive file ID or full URL (e.g. https://drive.google.com/file/d/xxx)"),
+                    },
+                    required=["file_id"],
+                ),
+            ),
+            gtypes.FunctionDeclaration(
+                name="search_gdrive",
+                description="Search for files in Google Drive by name or content keyword.",
+                parameters=gtypes.Schema(
+                    type=gtypes.Type.OBJECT,
+                    properties={
+                        "query": gtypes.Schema(type=gtypes.Type.STRING, description="Search keyword"),
+                        "max_results": gtypes.Schema(type=gtypes.Type.INTEGER, description="Max results (default 20)"),
+                    },
+                    required=["query"],
+                ),
+            ),
+            # ── File reading ─────────────────────────────────────────────────
+            gtypes.FunctionDeclaration(
+                name="read_file",
+                description=(
+                    "Read any file or files from the filesystem. "
+                    "Supports glob patterns (e.g. /path/state*/name for multiple files). "
+                    "Use this to read sosreport files, log files, VM configs, or any system file. "
+                    "Always use this when the user asks to analyze files from a path."
+                ),
+                parameters=gtypes.Schema(
+                    type=gtypes.Type.OBJECT,
+                    properties={
+                        "path": gtypes.Schema(type=gtypes.Type.STRING,
+                                              description="Absolute file path or glob pattern, e.g. /path/to/file or /path/state*/name"),
+                        "max_lines": gtypes.Schema(type=gtypes.Type.INTEGER,
+                                                   description="Max lines to return (default 200)"),
+                    },
+                    required=["path"],
+                ),
+            ),
+            # ── Knowledge base ───────────────────────────────────────────────
+            gtypes.FunctionDeclaration(
+                name="read_rules",
+                description=(
+                    "Read rules and methodology files from the PerfX knowledge base. "
+                    "Use this whenever the user asks about performance issues, recommendations, "
+                    "or investigation steps — ALWAYS call this first before answering from memory. "
+                    "Topics: 'io', 'io-degradation', 'memory', 'network', 'vmexit', 'cpu', 'windows-vm', 'linux-vm'."
+                ),
+                parameters=gtypes.Schema(
+                    type=gtypes.Type.OBJECT,
+                    properties={
+                        "topic": gtypes.Schema(type=gtypes.Type.STRING,
+                                               description="Topic to search for, e.g. 'io-degradation', 'memory', 'vmexit'"),
+                    },
+                    required=["topic"],
+                ),
+            ),
+            # ── VM config audit ──────────────────────────────────────────────
+            gtypes.FunctionDeclaration(
+                name="check_vm_config",
+                description=(
+                    "Audit a Windows VM YAML configuration against the recommended template. "
+                    "Checks hyperv enlightenments, clock timers, ioThreads, autoattachMemBalloon, "
+                    "machine type, firmware, and disk bus. Returns a table showing Customer VM vs "
+                    "Recommended settings with pass/fail status."
+                ),
+                parameters=gtypes.Schema(
+                    type=gtypes.Type.OBJECT,
+                    properties={
+                        "path": gtypes.Schema(type=gtypes.Type.STRING,
+                                              description="Absolute path to the VM YAML file"),
+                    },
+                    required=["path"],
+                ),
+            ),
+            gtypes.FunctionDeclaration(
+                name="check_linux_vm_config",
+                description=(
+                    "Audit a Linux VM YAML configuration against benchmark-runner best practices. "
+                    "Checks disk bus (virtio), network model (virtio), CPU requests/limits, "
+                    "dedicatedCpuPlacement, ioThreadsPolicy, machine type, and evictionStrategy. "
+                    "Saves a report to logs/ and returns pass/fail/missing findings."
+                ),
+                parameters=gtypes.Schema(
+                    type=gtypes.Type.OBJECT,
+                    properties={
+                        "path": gtypes.Schema(type=gtypes.Type.STRING,
+                                              description="Absolute path to the Linux VM YAML file"),
+                    },
+                    required=["path"],
+                ),
+            ),
             # ── GitHub ──────────────────────────────────────────────────────
             gtypes.FunctionDeclaration(
                 name="github_get_issue",
@@ -192,6 +312,30 @@ TOOL_DECLARATIONS = [
 
 # ── Anthropic tool schema (for Claude backend) ──────────────────────────────
 ANTHROPIC_TOOLS = [
+    {"name": "list_gdrive_folder",
+     "description": "List all files in a Google Drive folder by folder ID or URL.",
+     "input_schema": {"type": "object", "properties": {"folder_id": {"type": "string", "description": "Google Drive folder ID or full URL"}}, "required": ["folder_id"]}},
+    {"name": "search_gdrive",
+     "description": "Search for files in Google Drive by name or content keyword.",
+     "input_schema": {"type": "object", "properties": {"query": {"type": "string"}, "max_results": {"type": "integer"}}, "required": ["query"]}},
+    {"name": "read_gdrive",
+     "description": "Read a file from Google Drive by file ID or full URL.",
+     "input_schema": {"type": "object", "properties": {"file_id": {"type": "string", "description": "Google Drive file ID or full URL"}}, "required": ["file_id"]}},
+    {"name": "read_file",
+     "description": "Read any file or files from the filesystem. Supports glob patterns (e.g. /path/state*/name). Use this to read sosreport files, log files, VM configs, or any system file.",
+     "input_schema": {"type": "object", "properties": {
+         "path": {"type": "string", "description": "Absolute file path or glob pattern"},
+         "max_lines": {"type": "integer", "description": "Max lines to return (default 200)"}
+     }, "required": ["path"]}},
+    {"name": "read_rules",
+     "description": "Read rules and methodology files from the PerfX knowledge base. Use this whenever the user asks about performance issues, recommendations, or investigation steps — ALWAYS call this first before answering from memory. Topics: 'io', 'io-degradation', 'memory', 'network', 'vmexit', 'cpu', 'windows-vm', 'linux-vm'.",
+     "input_schema": {"type": "object", "properties": {"topic": {"type": "string", "description": "Topic to search, e.g. 'io-degradation', 'memory', 'vmexit'"}}, "required": ["topic"]}},
+    {"name": "check_vm_config",
+     "description": "Audit a Windows VM YAML configuration against the recommended template. Checks hyperv enlightenments, clock timers, ioThreads, autoattachMemBalloon, machine type, firmware, and disk bus. Saves report to logs/.",
+     "input_schema": {"type": "object", "properties": {"path": {"type": "string", "description": "Absolute path to the Windows VM YAML file"}}, "required": ["path"]}},
+    {"name": "check_linux_vm_config",
+     "description": "Audit a Linux VM YAML configuration against benchmark-runner best practices. Checks disk bus (virtio), network model, CPU requests/limits, dedicatedCpuPlacement, ioThreadsPolicy, machine type, evictionStrategy. Saves report to logs/.",
+     "input_schema": {"type": "object", "properties": {"path": {"type": "string", "description": "Absolute path to the Linux VM YAML file"}}, "required": ["path"]}},
     {"name": "github_get_issue", "description": "Fetch a single GitHub issue or PR by repository and issue number.", "input_schema": {"type": "object", "properties": {"repo": {"type": "string", "description": "owner/repo"}, "number": {"type": "integer", "description": "Issue or PR number"}}, "required": ["repo", "number"]}},
     {"name": "github_list_issues", "description": "List issues for a GitHub repository.", "input_schema": {"type": "object", "properties": {"repo": {"type": "string", "description": "owner/repo"}, "state": {"type": "string", "description": "open, closed, or all (default: open)"}, "limit": {"type": "integer", "description": "Max results (default: 20)"}}, "required": ["repo"]}},
     {"name": "github_search_issues", "description": "Search GitHub issues and PRs using a search query string.", "input_schema": {"type": "object", "properties": {"query": {"type": "string", "description": "GitHub search query"}, "limit": {"type": "integer", "description": "Max results (default: 20)"}}, "required": ["query"]}},

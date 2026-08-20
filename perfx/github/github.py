@@ -5,7 +5,7 @@ import base64
 import time
 from pathlib import Path
 import requests
-from perfbot.logger import get_logger
+from perfx.logger import get_logger
 
 log = get_logger("github")
 

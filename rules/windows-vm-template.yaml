@@ -1,0 +1,84 @@
+# Windows VM Recommended Configuration
+# Source: https://github.com/redhat-performance/benchmark-runner/blob/main/benchmark_runner/common/template_operations/templates/windows/internal_data/windows_vm_template.yaml
+# Reference: https://developers.redhat.com/blog/2026/05/06/best-practice-configuration-and-tuning-linux-and-windows-vms#vm_definition
+# Tuning Guide: https://access.redhat.com/articles/6994974
+# VirtualMachinePreference customization: https://access.redhat.com/solutions/7123335
+# Use this as the reference when checking a customer Windows VM configuration.
+#
+# IMPORTANT — After applying this VM YAML config, also run inside the Windows guest:
+#   bcdedit /deletevalue useplatformclock
+#   (then reboot the VM)
+#
+# Why: This removes the guest-side platform clock override so Windows uses the
+# hyperv TSC clock configured below (hyperv: {} timer) instead of the PM timer.
+# Without this guest-side step, Windows may still trigger IO_INSTRUCTION VM exits
+# even after the VM config is corrected.
+# Reference: rules/io-degradation.md Step 5
+
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+spec:
+  # Always apply a VirtualMachineClusterPreference — it applies critical optimizations automatically
+  # List available: oc get VirtualMachineClusterPreference
+  preference:
+    name: windows.2k25.virtio       # use the appropriate preference for the Windows version
+  template:
+    spec:
+      domain:
+        clock:
+          timer:
+            hpet:
+              present: false        # HPET must be disabled
+            hyperv: {}              # hypervclock must be present
+            pit:
+              tickPolicy: delay
+            rtc:
+              tickPolicy: catchup
+          utc: {}
+        cpu:
+          sockets: 1
+          threads: 1
+        devices:
+          autoattachMemBalloon: false   # balloon must be disabled for MSSQL
+          blockMultiQueue: true
+          disks:
+          - disk:
+              bus: virtio             # virtio = best performance. scsi needed for OCP 4.22 coalescing
+                                      # NEVER use bus: sata — poor performance
+              # io: native applied automatically for block volumes
+              # For filesystem volumes: use preallocation to enable io: native
+            bootOrder: 1
+          interfaces:
+          - masquerade: {}
+            model: virtio             # NEVER use model: e1000e — poor performance
+          networkInterfaceMultiqueue: true
+        features:
+          acpi: {}
+          apic: {}
+          hyperv:
+            ipi: {}
+            synic: {}
+            synictimer:
+              direct: {}
+            spinlocks:
+              spinlocks: 8191         # must be 8191
+            reenlightenment: {}
+            reset: {}
+            relaxed: {}
+            vpindex: {}
+            runtime: {}
+            tlbflush: {}
+            frequencies: {}
+            vapic: {}
+          smm: {}
+        firmware:
+          bootloader:
+            efi:
+              secureBoot: false
+        ioThreads:
+          supplementalPoolThreadCount: 8    # IO threads for MSSQL workloads
+        ioThreadsPolicy: supplementalPool   # must be supplementalPool
+        machine:
+          type: q35
+      evictionStrategy: LiveMigrate
+      terminationGracePeriodSeconds: 180

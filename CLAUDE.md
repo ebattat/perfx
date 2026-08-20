@@ -2,9 +2,9 @@
 
 ## Package structure
 
-Source lives in `perfbot/`, tests mirror it under `tests/perfbot/`:
-- `perfbot/github/github.py` → `tests/perfbot/github/test_github.py`
-- `perfbot/jira/jira.py` → `tests/perfbot/jira/test_jira.py`
+Source lives in `perfx/`, tests mirror it under `tests/perfx/`:
+- `perfx/github/github.py` → `tests/perfx/github/test_github.py`
+- `perfx/jira/jira.py` → `tests/perfx/jira/test_jira.py`
 
 ## Adding tests
 
@@ -13,6 +13,34 @@ Use the `/add-tests` skill. Key rules:
 - Skip when credentials are missing, not fail
 - Jira JQL must always be bounded (include `project is not EMPTY`)
 - Run `pytest <file> -v` and fix failures before reporting done
+
+## Coverage rule — ALWAYS enforce
+
+**Every code change must be accompanied by tests. Coverage must stay ≥ 90%.**
+
+- After editing any `perfx/` or `skills/` file, add or update the corresponding test
+- Test files mirror source: `perfx/foo.py` → `tests/perfx/test_foo.py`, `skills/foo/foo.py` → `tests/perfx/skills/test_foo.py`
+- Verify with: `.venv/bin/pytest tests/ --cov=perfx --cov-fail-under=90 -q`
+- Do NOT report a task as done if coverage drops below 90%
+
+## Knowledge base rule — ALWAYS enforce
+
+**Every new or updated rule/methodology file must be reflected in the relevant SKILL.md files.**
+
+When adding or editing a file in `rules/` or `methodology/`:
+1. Identify which skills are affected by the new rule
+2. Add or update the `## Rules` section in the relevant `skills/*/SKILL.md` to reference the new file
+3. Add a step in `## Steps` that tells chai-bot to read the rule before analyzing
+
+**Mapping:**
+- `rules/io-degradation.md` → `skills/io-analysis/SKILL.md`, `skills/vmexit-analysis/SKILL.md`, `skills/cpu-analysis/SKILL.md`, `skills/delta-analysis/SKILL.md`
+- `rules/windows-vm-template.yaml` → `skills/vm-config/SKILL.md`
+- `rules/linux-vm-template.yaml` → `skills/vm-config/SKILL.md`
+- New rule for memory → `skills/memory-analysis/SKILL.md`, `skills/delta-analysis/SKILL.md`
+- New rule for network → `skills/network-analysis/SKILL.md`
+- New methodology file → all relevant skills that cover that topic
+
+Do NOT report a task done if a new rule was added without updating the corresponding SKILL.md files.
 
 ## Credentials
 
@@ -25,7 +53,7 @@ All credentials via `export` or `.env` (never committed):
 ## Running the agent
 
 ```bash
-cd ~/PycharmProjects/PerfBot/perfbot
+cd ~/PycharmProjects/PerfX/PerfX
 source .venv/bin/activate
 python run.py
 ```

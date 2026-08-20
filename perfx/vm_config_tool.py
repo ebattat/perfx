@@ -1,0 +1,354 @@
+import re
+from datetime import datetime
+from pathlib import Path
+
+LOGS_DIR = Path(__file__).parent.parent / "logs"
+
+HYPERV_KEYS = [
+    "relaxed", "vapic", "vpindex", "runtime", "reset",
+    "reenlightenment", "tlbflush", "frequencies", "ipi",
+    "synic", "synictimer", "spinlocks",
+]
+
+CLOCK_CHECKS = {
+    "hpet":   ("present", False),
+    "hyperv": None,
+    "pit":    ("tickPolicy", "delay"),
+    "rtc":    ("tickPolicy", "catchup"),
+}
+
+
+def _load_yaml(path: str) -> dict:
+    import yaml
+    raw = Path(path).read_text()
+    raw = re.sub(r'\{%-?.*?-?%\}', '', raw)
+    raw = re.sub(r'\{\{.*?\}\}', '"__template__"', raw)
+    return yaml.safe_load(raw)
+
+
+def _row(setting, customer, recommended, status):
+    return {"setting": setting, "customer": customer, "recommended": recommended, "status": status}
+
+
+def _save_report(vm_name: str, os_type: str, rows: list, summary: str) -> str:
+    LOGS_DIR.mkdir(exist_ok=True)
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    ts_file = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    path = LOGS_DIR / f"perfx_vm_audit_{ts_file}.log"
+    col_w = [28, 45, 48, 38]
+    header = (
+        f"  {'Setting':<{col_w[0]}} {'Customer VM':<{col_w[1]}} {'Recommended':<{col_w[2]}} {'Status'}\n"
+        f"  {'─'*col_w[0]} {'─'*col_w[1]} {'─'*col_w[2]} {'─'*col_w[3]}\n"
+    )
+    table_rows = "".join(
+        f"  {r['setting']:<{col_w[0]}} {r['customer']:<{col_w[1]}} {r['recommended']:<{col_w[2]}} {r['status']}\n"
+        for r in rows
+    )
+    entry = f"\n{'='*80}\nVM Config Audit — {os_type.upper()} — {vm_name}\nTimestamp: {timestamp}\n{summary}\n\n{header}{table_rows}"
+    with open(path, "a") as f:
+        f.write(entry)
+    return str(path)
+
+
+def _format_table(rows: list) -> str:
+    col_w = [28, 45, 48, 38]
+    lines = [
+        f"  {'Setting':<{col_w[0]}} {'Customer VM':<{col_w[1]}} {'Recommended':<{col_w[2]}} {'Status'}",
+        f"  {'─'*col_w[0]} {'─'*col_w[1]} {'─'*col_w[2]} {'─'*col_w[3]}",
+    ]
+    for r in rows:
+        lines.append(
+            f"  {r['setting']:<{col_w[0]}} {r['customer']:<{col_w[1]}} {r['recommended']:<{col_w[2]}} {r['status']}"
+        )
+    return "\n".join(lines)
+
+
+def check_vm_config(path: str) -> dict:
+    """Audit a KubeVirt Windows VM YAML and return a comparison table."""
+    try:
+        doc = _load_yaml(path)
+    except FileNotFoundError:
+        return {"error": f"File not found: {path}"}
+    except Exception as e:
+        return {"error": f"Failed to parse YAML: {e}"}
+
+    domain = (
+        (doc.get("spec") or {})
+        .get("template", {})
+        .get("spec", {})
+        .get("domain", {})
+    )
+    devices  = domain.get("devices") or {}
+    features = domain.get("features") or {}
+    clock    = domain.get("clock") or {}
+    cpu      = domain.get("cpu") or {}
+    machine  = domain.get("machine") or {}
+    firmware = domain.get("firmware") or {}
+    resources = domain.get("resources") or {}
+    vm_name  = (doc.get("metadata") or {}).get("name", "unknown")
+
+    rows = []
+    issues = 0
+
+    # ── hyperv enlightenments ─────────────────────────────────────────────────
+    hyperv = features.get("hyperv") or {}
+    present_keys = [k for k in HYPERV_KEYS if k in hyperv]
+    missing_keys = [k for k in HYPERV_KEYS if k not in hyperv]
+    customer_hv = ",".join(present_keys) if present_keys else "None"
+    recommended_hv = ",".join(HYPERV_KEYS)
+    if missing_keys:
+        rows.append(_row("hyperv enlightenments", customer_hv, recommended_hv,
+                         f"❌ MISSING — {','.join(missing_keys)}"))
+        issues += len(missing_keys)
+    else:
+        # check spinlocks value
+        spinlocks_val = (hyperv.get("spinlocks") or {}).get("spinlocks")
+        synictimer_ok = isinstance(hyperv.get("synictimer"), dict) and "direct" in hyperv["synictimer"]
+        if spinlocks_val != 8191:
+            rows.append(_row("hyperv enlightenments", customer_hv, recommended_hv,
+                             f"⚠️ spinlocks={spinlocks_val!r} (want 8191)"))
+            issues += 1
+        elif not synictimer_ok:
+            rows.append(_row("hyperv enlightenments", customer_hv, recommended_hv,
+                             "⚠️ synictimer missing direct: {}"))
+            issues += 1
+        else:
+            rows.append(_row("hyperv enlightenments", customer_hv, recommended_hv, "✅ OK"))
+
+    # ── clock timers ─────────────────────────────────────────────────────────
+    timer = clock.get("timer") or {}
+    clock_offset = clock.get("utc") if "utc" in clock else clock.get("offset", "")
+    customer_clock = f"UTC" if "utc" in clock else (clock_offset or "not set")
+    if not timer:
+        rows.append(_row("clock", customer_clock,
+                         "hpet:false + hyperv + pit + rtc",
+                         "❌ MISSING — no timer config"))
+        issues += 1
+    else:
+        clock_issues = []
+        for tname, check in CLOCK_CHECKS.items():
+            if tname not in timer:
+                clock_issues.append(f"{tname} missing")
+            elif check:
+                attr, want = check
+                got = (timer[tname] or {}).get(attr) if isinstance(timer[tname], dict) else None
+                if got != want:
+                    clock_issues.append(f"{tname}.{attr}={got!r}")
+        if clock_issues:
+            rows.append(_row("clock", customer_clock,
+                             "hpet:false + hyperv + pit + rtc",
+                             f"⚠️ {', '.join(clock_issues)}"))
+            issues += len(clock_issues)
+        else:
+            rows.append(_row("clock", "configured", "hpet:false + hyperv + pit + rtc", "✅ OK"))
+
+    # ── ioThreads ─────────────────────────────────────────────────────────────
+    iothreads_cfg = domain.get("ioThreads") or {}
+    pool_count = iothreads_cfg.get("supplementalPoolThreadCount")
+    vcpus = (cpu.get("cores", 1) or 1) * (cpu.get("sockets", 1) or 1)
+    recommended_threads = max(4, min(vcpus // 4, 16))  # start at 4, scale with vCPUs, cap at 16
+    rec_io = f"≥{recommended_threads} (based on {vcpus} vCPUs; start at 4, scale up for fast storage)"
+    customer_io = f"supplementalPoolThreadCount: {pool_count}" if pool_count else "None"
+    if not pool_count:
+        status_io = "❌ MISSING (requires OCP 4.19+)"
+        issues += 1
+    elif pool_count < recommended_threads:
+        status_io = f"⚠️ LOW — {pool_count} set, ≥{recommended_threads} recommended for {vcpus} vCPUs"
+    else:
+        status_io = "✅ OK"
+    rows.append(_row("ioThreads", customer_io, rec_io, status_io))
+
+    # ── ioThreadsPolicy ───────────────────────────────────────────────────────
+    policy = domain.get("ioThreadsPolicy")
+    rows.append(_row("ioThreadsPolicy", policy or "None", "supplementalPool",
+                     "✅ OK" if policy == "supplementalPool" else "❌ MISSING (requires OCP 4.19+)"))
+    if policy != "supplementalPool":
+        issues += 1
+
+    # ── autoattachMemBalloon ──────────────────────────────────────────────────
+    balloon = devices.get("autoattachMemBalloon")
+    if balloon is False:
+        rows.append(_row("autoattachMemBalloon", "false", "false", "✅ OK"))
+    elif balloon is None:
+        rows.append(_row("autoattachMemBalloon", "Not set (defaults to true)", "false", "❌ MISSING"))
+        issues += 1
+    else:
+        rows.append(_row("autoattachMemBalloon", str(balloon), "false", "❌ FAIL"))
+        issues += 1
+
+    # ── disk bus ──────────────────────────────────────────────────────────────
+    disks = devices.get("disks") or []
+    buses = list({(d.get("disk") or {}).get("bus", "") for d in disks if d.get("disk")})
+    customer_bus = ", ".join(b for b in buses if b) or "not set"
+    rows.append(_row("disk bus", customer_bus, "virtio (or scsi for OCP 4.22)",
+                     "✅ OK" if "virtio" in buses or "scsi" in buses else "⚠️ check bus type"))
+
+    # ── machine type ──────────────────────────────────────────────────────────
+    mtype = machine.get("type", "not set")
+    if "q35" not in mtype:
+        status = "❌ not q35-based"
+        issues += 1
+    elif any(f"rhel9.{v}" in mtype for v in ["8", "9"]):
+        status = "✅ OK"
+    elif "rhel9." in mtype:
+        status = "⚠️ OLD — too old for OCP 4.22 coalescing"
+    else:
+        status = "✅ OK"
+    rows.append(_row("machine type", mtype, "pc-q35-rhel9.8.0+", status))
+
+    # ── firmware ──────────────────────────────────────────────────────────────
+    bootloader = (firmware.get("bootloader") or {})
+    efi = bootloader.get("efi")
+    bios = bootloader.get("bios")
+    if efi is not None:
+        customer_fw = f"efi: {efi}"
+        fw_status = "✅ OK"
+    elif bios is not None:
+        customer_fw = "bios: {}"
+        fw_status = "⚠️ Using legacy BIOS, not EFI"
+    else:
+        customer_fw = "not set"
+        fw_status = "⚠️ Using legacy BIOS, not EFI"
+    rows.append(_row("firmware", customer_fw, "efi: {secureBoot: false}", fw_status))
+
+    # ── networkInterfaceMultiqueue ─────────────────────────────────────────────
+    nmq = devices.get("networkInterfaceMultiqueue")
+    rows.append(_row("networkInterfaceMultiqueue", str(nmq) if nmq is not None else "Not set",
+                     "true", "✅ OK" if nmq is True else "❌ MISSING"))
+    if nmq is not True:
+        issues += 1
+
+    # ── blockMultiQueue ───────────────────────────────────────────────────────
+    bmq = devices.get("blockMultiQueue")
+    rows.append(_row("blockMultiQueue", str(bmq) if bmq is not None else "Not set",
+                     "true", "✅ OK" if bmq is True else "❌ MISSING"))
+    if bmq is not True:
+        issues += 1
+
+    # ── cpu ───────────────────────────────────────────────────────────────────
+    cores   = cpu.get("cores", "")
+    sockets = cpu.get("sockets", "")
+    threads = cpu.get("threads", "")
+    cpu_str = f"{cores} cores, {sockets} socket" if cores else "not set"
+    rows.append(_row("cpu", cpu_str, "1 socket, 1 thread", "✅ OK" if sockets else "⚠️ check"))
+
+    # ── memory ────────────────────────────────────────────────────────────────
+    mem = (resources.get("requests") or {}).get("memory", "not set")
+    rows.append(_row("memory", mem, "as needed", "✅ OK" if mem != "not set" else "⚠️ not set"))
+
+    severity = "PASS" if issues == 0 else ("CRITICAL" if issues > 5 else "NEEDS ATTENTION")
+    summary = f"{severity}: {sum(1 for r in rows if '✅' in r['status'])} passed, {issues} issues of {len(rows)} checks"
+
+    log_file = _save_report(vm_name, "windows", rows, summary)
+
+    return {
+        "severity": severity,
+        "vm_name": vm_name,
+        "summary": summary,
+        "table": _format_table(rows),
+        "rows": rows,
+        "log_file": log_file,
+    }
+
+
+def check_linux_vm_config(path: str) -> dict:
+    """Audit a KubeVirt Linux VM YAML and return a comparison table."""
+    try:
+        doc = _load_yaml(path)
+    except FileNotFoundError:
+        return {"error": f"File not found: {path}"}
+    except Exception as e:
+        return {"error": f"Failed to parse YAML: {e}"}
+
+    domain = (
+        (doc.get("spec") or {})
+        .get("template", {})
+        .get("spec", {})
+        .get("domain", {})
+    )
+    devices   = domain.get("devices") or {}
+    cpu       = domain.get("cpu") or {}
+    machine   = domain.get("machine") or {}
+    resources = domain.get("resources") or {}
+    spec      = (doc.get("spec") or {}).get("template", {}).get("spec", {})
+    vm_name   = (doc.get("metadata") or {}).get("name", "unknown")
+
+    rows = []
+    issues = 0
+
+    # ── disk bus ──────────────────────────────────────────────────────────────
+    disks = devices.get("disks") or []
+    for disk in disks:
+        bus = (disk.get("disk") or {}).get("bus", "")
+        name = disk.get("name", "unnamed")
+        if not bus:
+            continue
+        ok = bus == "virtio"
+        rows.append(_row(f"disk '{name}' bus", bus, "virtio",
+                         "✅ OK" if ok else f"❌ FAIL (got {bus!r})"))
+        if not ok:
+            issues += 1
+
+    # ── network model ─────────────────────────────────────────────────────────
+    for iface in devices.get("interfaces") or []:
+        model = iface.get("model", "not set")
+        name = iface.get("name", "unnamed")
+        ok = model == "virtio"
+        rows.append(_row(f"interface '{name}' model", model, "virtio",
+                         "✅ OK" if ok else f"❌ FAIL (got {model!r})"))
+        if not ok:
+            issues += 1
+
+    # ── cpu requests / limits ─────────────────────────────────────────────────
+    req = resources.get("requests") or {}
+    lim = resources.get("limits") or {}
+    for field, val in [("cpu", req.get("cpu")), ("memory", req.get("memory"))]:
+        rows.append(_row(f"resources.requests.{field}", val or "not set", "set",
+                         "✅ OK" if val else "❌ MISSING"))
+        if not val:
+            issues += 1
+    for field, val in [("cpu", lim.get("cpu")), ("memory", lim.get("memory"))]:
+        rows.append(_row(f"resources.limits.{field}", val or "not set",
+                         "same as requests (guaranteed QoS)",
+                         "✅ OK" if val else "⚠️ not set"))
+
+    # ── dedicatedCpuPlacement ─────────────────────────────────────────────────
+    dcp = cpu.get("dedicatedCpuPlacement")
+    rows.append(_row("cpu.dedicatedCpuPlacement", str(dcp) if dcp is not None else "not set",
+                     "true (for benchmarks)", "✅ OK" if dcp is True else "⚠️ not set"))
+
+    # ── ioThreadsPolicy ───────────────────────────────────────────────────────
+    policy = domain.get("ioThreadsPolicy")
+    ok = policy in ("shared", "auto", "supplementalPool")
+    rows.append(_row("ioThreadsPolicy", policy or "not set", "shared or supplementalPool",
+                     "✅ OK" if ok else "⚠️ not set"))
+
+    # ── machine type ──────────────────────────────────────────────────────────
+    mtype = machine.get("type", "not set")
+    rows.append(_row("machine type", mtype, "q35 or empty (default)",
+                     "✅ OK" if ("q35" in mtype or mtype in ("", "not set")) else f"⚠️ {mtype!r}"))
+
+    # ── evictionStrategy ─────────────────────────────────────────────────────
+    eviction = spec.get("evictionStrategy")
+    rows.append(_row("evictionStrategy", eviction or "not set", "LiveMigrate",
+                     "✅ OK" if eviction == "LiveMigrate" else "⚠️ not set"))
+
+    # ── cpu topology ─────────────────────────────────────────────────────────
+    sockets = cpu.get("sockets", "not set")
+    cores   = cpu.get("cores", "not set")
+    rows.append(_row("cpu topology", f"{cores} cores, {sockets} sockets",
+                     "1 socket, 1 thread", "✅ OK"))
+
+    severity = "PASS" if issues == 0 else ("CRITICAL" if issues > 5 else "NEEDS ATTENTION")
+    summary = f"{severity}: {sum(1 for r in rows if '✅' in r['status'])} passed, {issues} issues of {len(rows)} checks"
+
+    log_file = _save_report(vm_name, "linux", rows, summary)
+
+    return {
+        "severity": severity,
+        "vm_name": vm_name,
+        "summary": summary,
+        "table": _format_table(rows),
+        "rows": rows,
+        "log_file": log_file,
+    }

@@ -3,8 +3,8 @@ import os
 import re
 import warnings
 warnings.filterwarnings("ignore", message=".*quota project.*", category=UserWarning)
-from perfbot.tool_registry import DISPATCH, TOOL_DECLARATIONS, ANTHROPIC_TOOLS
-from perfbot.logger import get_logger
+from perfx.tool_registry import DISPATCH, TOOL_DECLARATIONS, ANTHROPIC_TOOLS
+from perfx.logger import get_logger
 
 log = get_logger("client")
 
@@ -33,8 +33,29 @@ def _parse_repos() -> list[str]:
 def _build_system_instruction() -> str:
     repo_list = _parse_repos()
     base = (
-        "You are a helpful assistant with access to GitHub and Jira. "
-        "Use the provided tools to read, create, update, and search GitHub issues, pull requests, Jira tickets, and repository files. "
+        "You are a helpful assistant with access to GitHub, Jira, a performance knowledge base, VM YAML configuration auditing, and the local filesystem. "
+        "Use read_file to read any local file the user mentions — sosreport files, log files, config files, system files. "
+        "Use list_gdrive_folder to list files in a Google Drive folder (accepts folder ID or URL). "
+        "Use read_gdrive to read a Google Drive file (accepts file ID or URL). "
+        "When asked to analyze a sosreport or directory, read the key files using read_file: "
+        "etc/os-release, proc/cmdline, sos_commands/processor/lscpu, "
+        "sys/devices/system/cpu/cpu0/cpuidle/state*/name, sys/devices/system/cpu/cpu0/cpufreq/scaling_governor, "
+        "proc/meminfo, sos_commands/block/lsblk, proc/sys/vm/dirty_ratio. "
+        "Apply rules from read_rules('io-degradation') to interpret the findings. "
+        "IMPORTANT: When the user asks about performance issues, degradation, recommendations, investigation steps, "
+        "or asks to see a recommended/reference configuration (e.g. 'show me the windows yaml', 'recommended config', "
+        "'windows template', 'linux template') — ALWAYS call read_rules first with the relevant topic. "
+        "Topics to use: 'io-degradation', 'memory', 'vmexit', 'cpu', 'windows-vm-template', 'linux-vm-template'. "
+        "Base your answer entirely on the returned rules content. Never answer from memory alone. "
+        "When the user shares ANY file path ending in .yaml or .yml, or mentions a VM YAML or VM config file — "
+        "AUTOMATICALLY call check_vm_config (for Windows VMs) or check_linux_vm_config (for Linux VMs) WITHOUT waiting to be asked. "
+        "Do NOT describe or analyze the YAML yourself — always call the tool. "
+        "If unsure whether the VM is Windows or Linux, check if the YAML contains 'hyperv' or 'windows' → Windows, otherwise assume Linux. "
+        "After the tool runs, ALWAYS display: "
+        "1. The 'table' field EXACTLY as returned (pre-formatted — do not modify it) "
+        "2. Severity and summary "
+        "3. 'Report saved to: <log_file>' "
+        "Never skip showing the table. "
         "Always confirm the action you took and summarize the result clearly. "
         "Maintain context across the conversation — if the user refers to something from a previous message (e.g. 'fill the values', 'that file', 'same repo'), use the prior context to fulfill the request. "
         "When the user asks for the content of a file (e.g. 'give me the yaml file', 'show me the template'), "
@@ -46,7 +67,7 @@ def _build_system_instruction() -> str:
         "- No network access beyond GitHub and Jira APIs\n"
         "- No ability to execute benchmark-runner or any other program\n"
         "- No ability to deploy, apply, or create any resource on a cluster\n"
-        "What you CAN do: read, search, and create content in GitHub and Jira."
+        "What you CAN do: audit VM YAML configs, read, search, and create content in GitHub and Jira."
     )
     if repo_list:
         formatted = ", ".join(repo_list)
@@ -173,7 +194,7 @@ class ClaudeAgent:
 
 def Agent():
     """Factory — returns GeminiAgent or ClaudeAgent based on PERFBOT_MODEL."""
-    model = os.environ.get("PERFBOT_MODEL", "gemini").lower()
+    model = os.environ.get("PERFBOT_MODEL", "claude").lower()
     if model == "claude":
         log.debug("Using Claude backend")
         return ClaudeAgent()
