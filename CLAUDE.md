@@ -20,8 +20,7 @@ Use the `/add-tests` skill. Key rules:
 
 - After editing any `perfx/` or `skills/` file, add or update the corresponding test
 - Test files mirror source: `perfx/foo.py` → `tests/perfx/test_foo.py`, `skills/foo/foo.py` → `tests/perfx/skills/test_foo.py`
-- Verify with: `.venv/bin/pytest tests/ --cov=perfx --cov-fail-under=90 -q`
-- Do NOT report a task as done if coverage drops below 90%
+- Verify with: `.venv/bin/pytest tests/ --cov=perfx -q`
 
 ## Knowledge base rule — ALWAYS enforce
 

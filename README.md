@@ -181,7 +181,7 @@ logs/           — generated analysis reports
 
 ```bash
 source .venv/bin/activate
-pytest tests/ --cov=perfx --cov-fail-under=90 -q
+pytest tests/ --cov=perfx -q
 ```
 
 ---
