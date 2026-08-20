@@ -85,6 +85,39 @@ Then run:
 perfx --model gemini
 ```
 
+**Option 4 — Custom LLM (bring your own)**
+
+You can plug in any LLM by adding a new backend class to `perfx/llm/backend.py`. The only requirement is a `complete(system, user)` method that returns a string:
+
+```python
+class MyBackend:
+    def __init__(self):
+        # initialize your LLM client here
+        pass
+
+    def complete(self, system: str, user: str) -> str:
+        # call your LLM and return the response text
+        return my_llm.call(system=system, prompt=user)
+```
+
+Then register it in `get_backend()`:
+
+```python
+def get_backend(model: str = None):
+    model = model or os.environ.get("PERFBOT_MODEL", "gemini").lower()
+    if model == "claude":
+        return ClaudeBackend()
+    if model == "my-llm":
+        return MyBackend()
+    return GeminiBackend()
+```
+
+Run with:
+
+```bash
+PERFBOT_MODEL=my-llm perfx
+```
+
 ---
 
 ## Example prompts
