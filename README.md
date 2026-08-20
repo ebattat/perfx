@@ -1,6 +1,6 @@
 # PerfX [Performance X-ray]
 
-PerfX is an agentic tool that initially encodes virtualization performance expertise into structured, reusable skills. It combines curated domain knowledge with an AI agent to help engineers and customers diagnose and resolve KVM/OpenShift Virtualization performance issues faster and more consistently.
+PerfX is an agentic tool that initially encodes virtualization performance expertise into structured, reusable skills. It combines curated domain knowledge with an AI agent to help engineers and customers diagnose and resolve KVM/OpenShift Virtualization performance issues faster and more consistently. While the initial focus is virtualization, the architecture is designed to be extensible — the same skills, rules, and methodology model could be applied to other performance domains in the future.
 
 ---
 
