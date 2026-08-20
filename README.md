@@ -7,7 +7,7 @@ PerfX is an agentic tool that encodes virtualization performance expertise into 
 ## Setup
 
 ```bash
-cd ~/PycharmProjects/PerfX
+cd PerfX
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
