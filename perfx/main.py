@@ -85,40 +85,43 @@ def main():
         print(f"Configured repos: {', '.join(repos)}")
     print()
 
-    # open session log
     REPORTS_DIR.mkdir(exist_ok=True)
     session_ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    session_log = REPORTS_DIR / f"perfx_chat_{session_ts}.log"
-    session_file = open(session_log, "w")
-    session_file.write(f"PerfX Chat Session — {session_ts}\n{'='*60}\n\n")
-    print(f"Session log: {session_log}\n")
+    session_log = REPORTS_DIR / f"perfx_session_{session_ts}.log"
+    session_file = None
 
     agent = Agent()
     while True:
         try:
             user_input = input("You: ").strip()
         except (KeyboardInterrupt, EOFError):
-            session_file.close()
+            if session_file:
+                session_file.close()
             print("\nBye!")
             sys.exit(0)
 
         if not user_input:
             continue
         if user_input.lower() in {"exit", "quit"}:
-            session_file.close()
+            if session_file:
+                session_file.close()
             print("Bye!")
             sys.exit(0)
 
         try:
             response = agent.chat(user_input)
             print(f"\nAgent: {response}\n")
-            session_file.write(f"You: {user_input}\n\nAgent: {response}\n\n{'─'*60}\n\n")
-            session_file.flush()
+            # only write log when a skill is invoked (starts with /)
+            if user_input.startswith("/"):
+                if session_file is None:
+                    session_file = open(session_log, "w")
+                    session_file.write(f"PerfX Session — {session_ts}\n{'='*60}\n\n")
+                    print(f"Session log: {session_log}\n")
+                session_file.write(f"You: {user_input}\n\nAgent: {response}\n\n{'─'*60}\n\n")
+                session_file.flush()
         except Exception as exc:
             log.exception("Agent error")
             print(f"\n[Error] {exc}\n")
-            session_file.write(f"You: {user_input}\n\n[Error]: {exc}\n\n{'─'*60}\n\n")
-            session_file.flush()
 
 
 if __name__ == "__main__":
