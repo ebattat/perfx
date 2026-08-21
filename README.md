@@ -1,5 +1,7 @@
 # PerfX [Performance X-ray]
 
+[![codecov](https://codecov.io/gh/ebattat/perfx/branch/main/graph/badge.svg)](https://codecov.io/gh/ebattat/perfx)
+
 PerfX is an agentic tool that encodes performance expertise into structured, reusable skills. It combines curated domain knowledge with an AI agent to help engineers and customers diagnose and resolve performance issues faster and more consistently. While initially focused on KVM/OpenShift Virtualization, the architecture is designed to be extensible and the same skills, rules, and methodology model can be applied to any performance domain or product in the future.
 
 ---
