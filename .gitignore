@@ -11,5 +11,3 @@ build/
 .cache/
 .coverage
 coverage.xml
-.claude/settings.json
-.claude/skills/
