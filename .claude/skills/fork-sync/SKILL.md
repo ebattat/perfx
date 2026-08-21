@@ -1,4 +1,4 @@
-# /sync-fork
+# /fork-sync
 
 Sync the local fork (origin) with upstream after a merge.
 
