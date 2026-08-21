@@ -9,3 +9,7 @@ dist/
 build/
 .pytest_cache/
 .cache/
+.coverage
+coverage.xml
+.claude/settings.json
+.claude/skills/
