@@ -1,6 +1,6 @@
 Base directory for this skill: /Users/ebattat/PycharmProjects/PerfX
 
-# /perfx-test
+# /unittest
 
 Run PerfX unit tests with coverage reporting.
 
