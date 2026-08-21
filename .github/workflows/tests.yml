@@ -31,7 +31,7 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest tests/ --cov=perfx --cov-report=term-missing --cov-report=xml -q
+          pytest tests/ --cov=perfx --cov-report=term-missing --cov-report=xml --cov-fail-under=90 -q
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
