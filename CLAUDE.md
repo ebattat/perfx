@@ -52,7 +52,6 @@ All credentials via `export` or `.env` (never committed):
 ## Running the agent
 
 ```bash
-cd ~/PycharmProjects/PerfX/PerfX
 source .venv/bin/activate
 python run.py
 ```
