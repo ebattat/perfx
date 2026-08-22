@@ -1,4 +1,4 @@
-Base directory for this skill: /Users/ebattat/PycharmProjects/PerfX
+Base directory for this skill: .
 
 # /unittest
 
@@ -8,14 +8,14 @@ Run PerfX unit tests with coverage reporting.
 
 1. **Ensure venv is active and dependencies installed**
    ```bash
-   cd /Users/ebattat/PycharmProjects/PerfX
+   cd .
    python3 -m venv .venv
    .venv/bin/pip install -r requirements.txt pytest pytest-cov -q
    ```
 
 2. **Run all tests with coverage**
    ```bash
-   cd /Users/ebattat/PycharmProjects/PerfX
+   cd .
    .venv/bin/pytest tests/ --cov=perfx --cov-report=term-missing --cov-fail-under=90 -q
    ```
    All tests must pass and coverage must be ≥ 90%.
