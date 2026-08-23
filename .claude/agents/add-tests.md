@@ -59,7 +59,6 @@ jira_search_issues("project is not EMPTY order by created DESC")
 
 After creating or updating a test file, always run:
 ```bash
-cd ~/PycharmProjects/PerfX/PerfX
 source .venv/bin/activate
 pytest <test_file_path> -v
 ```

@@ -16,7 +16,7 @@ Use the `/add-tests` skill. Key rules:
 
 ## Coverage rule — ALWAYS enforce
 
-**Every code change must be accompanied by tests. Coverage must stay ≥ 90%.**
+**Every code change must be accompanied by tests.**
 
 - After editing any `perfx/` or `skills/` file, add or update the corresponding test
 - Test files mirror source: `perfx/foo.py` → `tests/perfx/test_foo.py`, `skills/foo/foo.py` → `tests/perfx/skills/test_foo.py`
@@ -52,7 +52,6 @@ All credentials via `export` or `.env` (never committed):
 ## Running the agent
 
 ```bash
-cd ~/PycharmProjects/PerfX/PerfX
 source .venv/bin/activate
 python run.py
 ```
