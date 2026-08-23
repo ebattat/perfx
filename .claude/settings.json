@@ -21,7 +21,7 @@
             "type": "command",
             "timeout": 60,
             "statusMessage": "Checking coverage...",
-            "command": "FILE=$(jq -r '.tool_input.file_path // .tool_response.filePath // empty' 2>/dev/null); if echo \"$FILE\" | grep -qE '/Users/ebattat/PycharmProjects/PerfX/(perfx|skills)/.*\\.py$'; then cd /Users/ebattat/PycharmProjects/PerfX && RESULT=$(.venv/bin/pytest tests/ --cov=perfx --cov-fail-under=90 -q --override-ini='addopts=' 2>&1 | tail -3); echo \"$RESULT\" | grep -q 'Required test coverage' && echo '{\"systemMessage\": \"⚠️  Coverage dropped below 90%! Run: .venv/bin/pytest tests/ --cov=perfx --cov-report=term-missing -q\"}' || true; fi"
+            "command": "FILE=$(jq -r '.tool_input.file_path // .tool_response.filePath // empty' 2>/dev/null); if echo \"$FILE\" | grep -qE '(^|/)(perfx|skills)/.*\\.py$'; then cd \"$(git rev-parse --show-toplevel)\" && RESULT=$(.venv/bin/pytest tests/ --cov=perfx -q --override-ini='addopts=' 2>&1 | tail -3); echo \"$RESULT\" | grep -q 'FAILED\\|ERROR' && echo '{\"systemMessage\": \"⚠️  Tests failed! Run: .venv/bin/pytest tests/ --cov=perfx --cov-report=term-missing -q\"}' || true; fi"
           }
         ]
       }

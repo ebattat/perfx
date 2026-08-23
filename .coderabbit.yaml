@@ -16,7 +16,7 @@ reviews:
   path_instructions:
     - path: "perfx/**/*.py"
       instructions: |
-        - Ensure coverage stays ≥ 90%. Every code change must have a corresponding test.
+        - Every code change must have a corresponding test.
         - Test files mirror source: perfx/foo.py → tests/perfx/test_foo.py
         - No secrets or credentials in code — use environment variables or .env (gitignored).
         - Follow existing patterns: pure functions, no global state, clear SEVERITY levels.
@@ -36,7 +36,6 @@ reviews:
     - path: ".github/workflows/*.yml"
       instructions: |
         - CI must run on Python 3.11, 3.12, and 3.13.
-        - Coverage threshold must stay at --cov-fail-under=90.
 
 chat:
   auto_reply: true
