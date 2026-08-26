@@ -476,6 +476,50 @@ class TestCheckLinuxVmConfigMissingResources:
 # _save_report tests
 # ---------------------------------------------------------------------------
 
+class TestCheckVmConfigNicModel:
+    def test_e1000_nic_flagged(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(vm_mod, "LOGS_DIR", tmp_path / "logs")
+        yaml_text = textwrap.dedent("""\
+            metadata:
+              name: linux-e1000
+            spec:
+              template:
+                spec:
+                  domain:
+                    devices:
+                      interfaces:
+                        - name: eth0
+                          model: e1000e
+        """)
+        f = tmp_path / "vm.yaml"
+        f.write_text(yaml_text)
+        result = check_linux_vm_config(str(f))
+        nic_rows = [r for r in result["rows"] if "model" in r["setting"]]
+        assert nic_rows
+        assert any("❌" in r["status"] for r in nic_rows)
+
+    def test_virtio_nic_passes(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(vm_mod, "LOGS_DIR", tmp_path / "logs")
+        yaml_text = textwrap.dedent("""\
+            metadata:
+              name: linux-virtio
+            spec:
+              template:
+                spec:
+                  domain:
+                    devices:
+                      interfaces:
+                        - name: eth0
+                          model: virtio
+        """)
+        f = tmp_path / "vm.yaml"
+        f.write_text(yaml_text)
+        result = check_linux_vm_config(str(f))
+        nic_rows = [r for r in result["rows"] if "model" in r["setting"]]
+        assert nic_rows
+        assert all("✅" in r["status"] for r in nic_rows)
+
+
 class TestSaveReport:
     def test_creates_log_file_with_expected_content(self, tmp_path, monkeypatch):
         monkeypatch.setattr(vm_mod, "LOGS_DIR", tmp_path)

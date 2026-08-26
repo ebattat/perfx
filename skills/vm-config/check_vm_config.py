@@ -252,6 +252,19 @@ def check(vm_path):
         "✅ OK" if net_mq is True else "⚠️ NOT SET",
         "" if net_mq is True else "Single queue NIC → bottleneck at high connection counts")
 
+    # NIC model
+    BAD_NIC_MODELS = {"e1000", "e1000e", "rtl8139"}
+    interfaces = devices.get("interfaces") or []
+    nic_models = {iface.get("model", "virtio") for iface in interfaces}
+    bad_nics = nic_models & BAD_NIC_MODELS
+    if bad_nics:
+        row("NIC model", ", ".join(sorted(bad_nics)), "virtio",
+            "❌ WRONG MODEL",
+            f"Non-virtio NIC ({', '.join(sorted(bad_nics))}) causes significant network performance degradation. "
+            "Switch to model: virtio")
+    else:
+        row("NIC model", ", ".join(sorted(nic_models)) if nic_models else "virtio (default)", "virtio", "✅ OK")
+
     # cpu
     cores   = cpu.get("cores", "?")
     sockets = cpu.get("sockets", "?")
