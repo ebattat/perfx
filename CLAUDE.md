@@ -1,4 +1,4 @@
-# PerfBot — project rules
+# PerfX — project rules
 
 ## PR and commit rules — ALWAYS enforce
 
