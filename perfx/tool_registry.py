@@ -1,6 +1,7 @@
 from google.genai import types as gtypes
 from perfx.vm_config_tool import check_vm_config, check_linux_vm_config
 from perfx.knowledge_tool import read_rules, read_file
+from perfx.cluster_tool import list_cluster_vms, fetch_cluster_vm_yaml
 from perfx.gdrive.gdrive import list_gdrive_folder, read_gdrive, search_gdrive
 from perfx.github.github import (
     github_get_issue,
@@ -22,6 +23,8 @@ from perfx.jira.jira import (
 DISPATCH = {
     "read_rules": read_rules,
     "read_file": read_file,
+    "list_cluster_vms": list_cluster_vms,
+    "fetch_cluster_vm_yaml": fetch_cluster_vm_yaml,
     "read_gdrive": read_gdrive,
     "list_gdrive_folder": list_gdrive_folder,
     "search_gdrive": search_gdrive,
@@ -117,6 +120,30 @@ TOOL_DECLARATIONS = [
                                                description="Topic to search for, e.g. 'io-degradation', 'memory', 'vmexit'"),
                     },
                     required=["topic"],
+                ),
+            ),
+            # ── OCP cluster tools ────────────────────────────────────────────
+            gtypes.FunctionDeclaration(
+                name="list_cluster_vms",
+                description=(
+                    "List all VMs running on the connected OCP cluster. "
+                    "Call this when the user asks to check a VM YAML and has not provided a file path."
+                ),
+                parameters=gtypes.Schema(type=gtypes.Type.OBJECT, properties={}),
+            ),
+            gtypes.FunctionDeclaration(
+                name="fetch_cluster_vm_yaml",
+                description=(
+                    "Fetch a VM YAML from the OCP cluster by name and namespace, save to a temp file, "
+                    "and return the file path. Use this before calling check_vm_config or check_linux_vm_config."
+                ),
+                parameters=gtypes.Schema(
+                    type=gtypes.Type.OBJECT,
+                    properties={
+                        "name":      gtypes.Schema(type=gtypes.Type.STRING, description="VM name"),
+                        "namespace": gtypes.Schema(type=gtypes.Type.STRING, description="Namespace the VM is in"),
+                    },
+                    required=["name", "namespace"],
                 ),
             ),
             # ── VM config audit ──────────────────────────────────────────────
@@ -330,6 +357,15 @@ ANTHROPIC_TOOLS = [
     {"name": "read_rules",
      "description": "Read rules and methodology files from the PerfX knowledge base. Use this whenever the user asks about performance issues, recommendations, or investigation steps — ALWAYS call this first before answering from memory. Topics: 'io', 'io-degradation', 'memory', 'network', 'vmexit', 'cpu', 'windows-vm', 'linux-vm'.",
      "input_schema": {"type": "object", "properties": {"topic": {"type": "string", "description": "Topic to search, e.g. 'io-degradation', 'memory', 'vmexit'"}}, "required": ["topic"]}},
+    {"name": "list_cluster_vms",
+     "description": "List all VMs running on the connected OCP cluster. Call this when the user asks to check a VM YAML and has not provided a file path.",
+     "input_schema": {"type": "object", "properties": {}}},
+    {"name": "fetch_cluster_vm_yaml",
+     "description": "Fetch a VM YAML from the OCP cluster by name and namespace, save to a temp file, and return the file path. Use this before calling check_vm_config or check_linux_vm_config.",
+     "input_schema": {"type": "object", "properties": {
+         "name":      {"type": "string", "description": "VM name"},
+         "namespace": {"type": "string", "description": "Namespace the VM is in"}
+     }, "required": ["name", "namespace"]}},
     {"name": "check_vm_config",
      "description": "Audit a Windows VM YAML configuration against the recommended template. Checks hyperv enlightenments, clock timers, ioThreads, autoattachMemBalloon, machine type, firmware, and disk bus. Saves report to logs/.",
      "input_schema": {"type": "object", "properties": {"path": {"type": "string", "description": "Absolute path to the Windows VM YAML file"}}, "required": ["path"]}},

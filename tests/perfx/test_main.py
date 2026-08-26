@@ -26,10 +26,11 @@ def _run_main(argv, inputs, monkeypatch, mock_agent=None, agent_side_effect=None
 
     with patch("sys.argv", argv):
         with patch("perfx.main.Agent", return_value=mock_agent):
-            with pytest.raises(SystemExit) as exc_info:
-                # Re-import to pick up fresh module state each time
-                import perfx.main as main_module
-                main_module.main()
+            with patch("perfx.main._cluster_available", return_value=False):
+                with pytest.raises(SystemExit) as exc_info:
+                    # Re-import to pick up fresh module state each time
+                    import perfx.main as main_module
+                    main_module.main()
     return exc_info.value
 
 

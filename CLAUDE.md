@@ -2,6 +2,7 @@
 
 ## PR and commit rules — ALWAYS enforce
 
+- **All changes must go through a PR to upstream (`redhat-performance/perfx`)** — never push directly to main
 - **Never reference internal Jira ticket numbers** in commit messages, PR titles, or PR descriptions — these are internal Red Hat links not accessible publicly
 - **Only reference public sources** in commits and PRs: Red Hat blog posts, access.redhat.com articles, KCS articles, or GitHub issues
 - Skills, rules, and methodology content must come from verified public sources — never from training data alone
