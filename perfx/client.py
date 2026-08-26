@@ -67,10 +67,10 @@ def _build_system_instruction() -> str:
         "\n\nIMPORTANT — You do NOT have the following capabilities. If asked, clearly say so:\n"
         "- No terminal or shell access — cannot run arbitrary commands\n"
         "- No ability to run Podman, Docker, or any container\n"
-        "- No network access beyond GitHub and Jira APIs\n"
+        "- No arbitrary network access — only GitHub API, Jira API, and OCP cluster (via oc CLI) are available\n"
         "- No ability to execute benchmark-runner or any other program\n"
         "- No ability to deploy, apply, or create any resource on a cluster\n"
-        "What you CAN do: list and fetch VM YAMLs from the cluster, audit VM configs, read files, search GitHub and Jira."
+        "What you CAN do: list Running VMs and fetch VM YAMLs from the OCP cluster, audit VM configs, read files, search GitHub and Jira."
     )
     if repo_list:
         formatted = ", ".join(repo_list)

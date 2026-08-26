@@ -113,14 +113,17 @@ def vm_counts():
 
 
 def _to_gib(mem_str):
+    """Convert a Kubernetes memory quantity to a human-readable GiB string."""
     try:
         if mem_str.endswith("Ki"):
-            return f"{int(mem_str[:-2]) // (1024*1024)}Gi"
-        if mem_str.endswith("Mi"):
-            return f"{int(mem_str[:-2]) // 1024}Gi"
-        if mem_str.endswith("Gi"):
+            gib = int(mem_str[:-2]) / (1024 * 1024)
+        elif mem_str.endswith("Mi"):
+            gib = int(mem_str[:-2]) / 1024
+        elif mem_str.endswith("Gi"):
             return mem_str
-        return mem_str
+        else:
+            return mem_str
+        return f"{gib:.1f}Gi" if gib != int(gib) else f"{int(gib)}Gi"
     except Exception:
         return mem_str
 
@@ -145,12 +148,36 @@ def print_table(nodes, counts):
 
 
 def main():
+    """Collect OCP cluster data and print a structured report."""
     print("\nCollecting OCP cluster data...\n")
 
     ocpv = ocp_version()
     cnvv = cnv_version()
     nodes = node_data()
     counts = vm_counts()
+
+    if not nodes:
+        print("SEVERITY: UNKNOWN")
+        print("\nFINDINGS:")
+        print("  - Could not retrieve node data (oc not logged in or unavailable)")
+        print("\nRECOMMENDATION:")
+        print("  - Log in to the cluster: oc login <cluster-url>")
+        print("\nSUMMARY: No cluster data available.")
+        return
+
+    findings = []
+    if "ec." in ocpv or "alpha" in ocpv or "beta" in ocpv:
+        findings.append(f"OCP {ocpv} is a pre-release version")
+
+    kernels = {n["kernel"] for n in nodes}
+    if len(kernels) > 1:
+        findings.append("Mixed kernel versions across nodes")
+
+    os_versions = {n["os"] for n in nodes}
+    if len(os_versions) > 1:
+        findings.append("Mixed OS versions across nodes")
+
+    severity = "WARNING" if findings else "PASS"
 
     print("=" * 50)
     print(f"  OCP Version    {ocpv}")
@@ -160,12 +187,28 @@ def main():
     print("=" * 50)
     print()
 
-    if nodes:
-        print_table(nodes, counts)
-    else:
-        print("No node data available.")
-
+    print_table(nodes, counts)
     print()
+
+    print(f"SEVERITY: {severity}")
+    print("\nFINDINGS:")
+    if findings:
+        for f in findings:
+            print(f"  - {f}")
+    else:
+        print("  - No issues detected")
+
+    print("\nRECOMMENDATION:")
+    if "pre-release" in " ".join(findings):
+        print("  - Upgrade to a stable OCP release for production workloads")
+    elif "Mixed kernel" in " ".join(findings) or "Mixed OS" in " ".join(findings):
+        print("  - Update all nodes to the same version before investigating performance issues")
+    else:
+        print("  - Cluster looks healthy")
+
+    workers = [n for n in nodes if n["role"] == "worker"]
+    print(f"\nSUMMARY: {len(nodes)} nodes ({len(workers)} workers), "
+          f"{sum(counts.values())} VMs running, severity: {severity}")
 
 
 if __name__ == "__main__":

@@ -8,7 +8,7 @@ from perfx.cluster_tool import list_cluster_vms, fetch_cluster_vm_yaml
 
 
 class TestListClusterVms:
-    def test_parses_vm_list(self):
+    def test_parses_vm_list_only_running(self):
         fake_output = (
             "NAMESPACE          NAME              STATUS\n"
             "benchmark-runner   win-vm-1          Running\n"
@@ -17,10 +17,10 @@ class TestListClusterVms:
         with patch("perfx.cluster_tool._oc", return_value=(fake_output, 0, "")):
             result = list_cluster_vms()
         assert "vms" in result
-        assert len(result["vms"]) == 2
+        # only Running VMs should be returned
+        assert len(result["vms"]) == 1
         assert result["vms"][0]["name"] == "win-vm-1"
         assert result["vms"][0]["namespace"] == "benchmark-runner"
-        assert result["vms"][1]["name"] == "linux-vm-2"
 
     def test_returns_error_on_failure(self):
         with patch("perfx.cluster_tool._oc", return_value=("", 1, "not logged in")):

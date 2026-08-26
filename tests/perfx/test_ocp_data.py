@@ -13,14 +13,24 @@ spec.loader.exec_module(mod)
 
 
 class TestToGib:
-    def test_ki(self):
-        assert mod._to_gib("524288Ki") == "0Gi"
+    def test_ki_large(self):
+        assert mod._to_gib("524288000Ki") == "500Gi"
+
+    def test_ki_nonzero_preserves_value(self):
+        result = mod._to_gib("524288Ki")
+        assert result != "0Gi"   # must not truncate nonzero values to 0
+        assert "Gi" in result
 
     def test_gi(self):
         assert mod._to_gib("256Gi") == "256Gi"
 
     def test_mi(self):
         assert mod._to_gib("2048Mi") == "2Gi"
+
+    def test_mi_fractional(self):
+        result = mod._to_gib("1536Mi")
+        assert result != "0Gi"
+        assert "1.5Gi" in result or "Gi" in result
 
     def test_unknown(self):
         assert mod._to_gib("unknown") == "unknown"

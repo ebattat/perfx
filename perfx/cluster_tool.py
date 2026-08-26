@@ -1,16 +1,21 @@
 """Tools for fetching live VM data from an OCP cluster via oc CLI."""
 import subprocess
 import tempfile
-from pathlib import Path
 
 
 def _oc(cmd, timeout=15):
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-    return result.stdout.strip(), result.returncode, result.stderr.strip()
+    """Run an oc command and return (stdout, returncode, stderr)."""
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return result.stdout.strip(), result.returncode, result.stderr.strip()
+    except FileNotFoundError:
+        return "", 1, "oc CLI not found — install oc and ensure it is on PATH"
+    except subprocess.TimeoutExpired:
+        return "", 1, f"oc command timed out after {timeout}s"
 
 
 def list_cluster_vms() -> dict:
-    """List all VMs running on the connected OCP cluster."""
+    """List all Running VMs on the connected OCP cluster."""
     out, rc, err = _oc(
         ["oc", "get", "vm", "-A", "-o",
          "custom-columns=NAMESPACE:.metadata.namespace,NAME:.metadata.name,STATUS:.status.printableStatus"]
@@ -22,7 +27,9 @@ def list_cluster_vms() -> dict:
     for line in lines[1:]:  # skip header
         parts = line.split()
         if len(parts) >= 2:
-            vms.append({"namespace": parts[0], "name": parts[1], "status": parts[2] if len(parts) > 2 else "unknown"})
+            status = parts[2] if len(parts) > 2 else "unknown"
+            if status.lower() == "running":
+                vms.append({"namespace": parts[0], "name": parts[1], "status": status})
     return {"vms": vms, "table": out}
 
 
