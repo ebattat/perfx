@@ -1,5 +1,11 @@
 # PerfBot — project rules
 
+## PR and commit rules — ALWAYS enforce
+
+- **Never reference internal Jira ticket numbers** (e.g. PERFSCALE-XXXX, CNV-XXXX, EET-XXXX) in commit messages, PR titles, or PR descriptions — these are internal Red Hat links not accessible publicly
+- **Only reference public sources** in commits and PRs: Red Hat blog posts, access.redhat.com articles, KCS articles, or GitHub issues
+- Skills, rules, and methodology content must come from verified public sources — never from training data alone
+
 ## Package structure
 
 Source lives in `perfx/`, tests mirror it under `tests/perfx/`:
