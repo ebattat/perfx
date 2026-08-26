@@ -276,18 +276,41 @@ def check_linux_vm_config(path: str) -> dict:
     rows = []
     issues = 0
 
-    # ── disk bus ──────────────────────────────────────────────────────────────
+    # ── disk bus and cache ────────────────────────────────────────────────────
     disks = devices.get("disks") or []
     for disk in disks:
-        bus = (disk.get("disk") or {}).get("bus", "")
-        name = disk.get("name", "unnamed")
+        disk_spec = disk.get("disk") or {}
+        bus   = disk_spec.get("bus", "")
+        cache = disk_spec.get("cache", "")
+        name  = disk.get("name", "unnamed")
         if not bus:
             continue
-        ok = bus == "virtio"
+        ok_bus = bus == "virtio"
         rows.append(_row(f"disk '{name}' bus", bus, "virtio",
-                         "✅ OK" if ok else f"❌ FAIL (got {bus!r})"))
-        if not ok:
+                         "✅ OK" if ok_bus else f"❌ FAIL (got {bus!r})"))
+        if not ok_bus:
             issues += 1
+        ok_cache = cache == "none"
+        rows.append(_row(f"disk '{name}' cache", cache if cache else "not set", "none",
+                         "✅ OK" if ok_cache else "⚠️ NOT SET — risk of buffered IO after live migration"))
+        if not ok_cache:
+            issues += 1
+
+    # ── blockMultiQueue ───────────────────────────────────────────────────────
+    bmq = devices.get("blockMultiQueue")
+    rows.append(_row("blockMultiQueue", str(bmq).lower() if bmq is not None else "not set", "true",
+                     "✅ OK" if bmq is True else "⚠️ NOT SET (OCP 4.19+)"))
+    if bmq is not True:
+        issues += 1
+
+    # ── ioThreads ─────────────────────────────────────────────────────────────
+    iothreads_cfg = domain.get("ioThreads") or {}
+    pool_count = iothreads_cfg.get("supplementalPoolThreadCount")
+    rows.append(_row("ioThreads.supplementalPoolThreadCount",
+                     str(pool_count) if pool_count else "not set", "≥4 (OCP 4.19+)",
+                     "✅ OK" if pool_count and pool_count >= 4 else "⚠️ NOT SET — IO on vCPU threads"))
+    if not pool_count:
+        issues += 1
 
     # ── network model ─────────────────────────────────────────────────────────
     for iface in devices.get("interfaces") or []:
