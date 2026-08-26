@@ -1,118 +1,75 @@
 #!/usr/bin/env python3
 """
-Collect OCP cluster summary for issue investigation.
-Requires: oc CLI logged into the cluster.
-Usage: python3 collect_ocp_data.py
+Analyze pre-collected OCP cluster data from local JSON files.
+
+Usage:
+  python3 collect_ocp_data.py --nodes nodes.json [--version version.json] [--vmis vmis.json]
+
+Collect the input files with:
+  oc get nodes -o json > nodes.json
+  oc version -o json  > version.json
+  oc get vmi -A -o json > vmis.json
 """
 import json
-import subprocess
 import sys
+from pathlib import Path
 
 
-def run(cmd):
-    try:
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
-        return result.stdout.strip(), result.returncode
-    except subprocess.TimeoutExpired:
-        return "", 1
+def parse_ocp_version(version_data: dict) -> str:
+    """Extract OCP version string from oc version JSON."""
+    return version_data.get("openshiftVersion", "unknown")
 
 
-def ocp_version():
-    out, rc = run("oc version -o json")
-    if rc != 0:
-        return "unknown"
-    try:
-        data = json.loads(out)
-        return data.get("openshiftVersion", "unknown")
-    except Exception:
-        return "unknown"
+def parse_cnv_version(csv_data: dict) -> str:
+    """Extract CNV version from oc get csv JSON."""
+    for item in csv_data.get("items", []):
+        name = item.get("metadata", {}).get("name", "")
+        if "kubevirt-hyperconverged" in name:
+            return item.get("spec", {}).get("version", name)
+    return "not installed"
 
 
-def cnv_version():
-    out, rc = run("oc get csv -n openshift-cnv -o json")
-    if rc != 0:
-        return "unknown"
-    try:
-        data = json.loads(out)
-        for item in data.get("items", []):
-            name = item.get("metadata", {}).get("name", "")
-            if "kubevirt-hyperconverged" in name:
-                return item.get("spec", {}).get("version", name)
-        return "not installed"
-    except Exception:
-        return "unknown"
-
-
-def node_data():
-    out, rc = run("oc get nodes -o json")
-    if rc != 0:
-        print(f"ERROR: cannot get nodes — are you logged in? ({out})", file=sys.stderr)
-        return []
-
-    try:
-        data = json.loads(out)
-    except Exception:
-        return []
-
+def parse_nodes(nodes_data: dict) -> list:
+    """Parse oc get nodes -o json into a list of node summary dicts."""
     nodes = []
-    for item in data.get("items", []):
+    for item in nodes_data.get("items", []):
         meta   = item.get("metadata", {})
         status = item.get("status", {})
         labels = meta.get("labels", {})
 
         name = meta.get("name", "unknown")
-
-        # role
         role = "worker"
         if "node-role.kubernetes.io/control-plane" in labels or "node-role.kubernetes.io/master" in labels:
             role = "control-plane"
 
-        # capacity
-        capacity = status.get("capacity", {})
-        cpu_cap  = capacity.get("cpu", "?")
-        mem_cap  = _to_gib(capacity.get("memory", "0Ki"))
-
-        # allocatable
+        capacity  = status.get("capacity", {})
         alloc     = status.get("allocatable", {})
-        cpu_alloc = alloc.get("cpu", "?")
-        mem_alloc = _to_gib(alloc.get("memory", "0Ki"))
-
-        # kernel + OS
-        node_info   = status.get("nodeInfo", {})
-        kernel      = node_info.get("kernelVersion", "?")
-        os_image    = node_info.get("osImage", "?")
+        node_info = status.get("nodeInfo", {})
 
         nodes.append({
             "name":      name,
             "role":      role,
-            "cpu":       cpu_cap,
-            "memory":    mem_cap,
-            "alloc_cpu": cpu_alloc,
-            "alloc_mem": mem_alloc,
-            "kernel":    kernel,
-            "os":        os_image,
+            "cpu":       capacity.get("cpu", "?"),
+            "memory":    _to_gib(capacity.get("memory", "0Ki")),
+            "alloc_cpu": alloc.get("cpu", "?"),
+            "alloc_mem": _to_gib(alloc.get("memory", "0Ki")),
+            "kernel":    node_info.get("kernelVersion", "?"),
+            "os":        node_info.get("osImage", "?"),
         })
-
     return nodes
 
 
-def vm_counts():
-    out, rc = run("oc get vmi -A -o json")
-    if rc != 0:
-        return {}
-    try:
-        data = json.loads(out)
-        counts = {}
-        for item in data.get("items", []):
-            node = item.get("status", {}).get("nodeName", "")
-            if node:
-                counts[node] = counts.get(node, 0) + 1
-        return counts
-    except Exception:
-        return {}
+def parse_vm_counts(vmis_data: dict) -> dict:
+    """Parse oc get vmi -A -o json into per-node VM counts."""
+    counts = {}
+    for item in vmis_data.get("items", []):
+        node = item.get("status", {}).get("nodeName", "")
+        if node:
+            counts[node] = counts.get(node, 0) + 1
+    return counts
 
 
-def _to_gib(mem_str):
+def _to_gib(mem_str: str) -> str:
     """Convert a Kubernetes memory quantity to a human-readable GiB string."""
     try:
         if mem_str.endswith("Ki"):
@@ -128,7 +85,8 @@ def _to_gib(mem_str):
         return mem_str
 
 
-def print_table(nodes, counts):
+def print_table(nodes: list, counts: dict) -> None:
+    """Print a formatted node summary table."""
     col = [28, 14, 8, 10, 14, 14, 22, 16, 10]
     headers = ["Node", "Role", "CPU", "Memory", "Alloc CPU", "Alloc Mem", "Kernel", "OS", "VMs"]
     sep = "─" * sum(col)
@@ -147,21 +105,14 @@ def print_table(nodes, counts):
     print(sep)
 
 
-def main():
-    """Collect OCP cluster data and print a structured report."""
-    print("\nCollecting OCP cluster data...\n")
-
-    ocpv = ocp_version()
-    cnvv = cnv_version()
-    nodes = node_data()
-    counts = vm_counts()
-
+def analyze(nodes: list, counts: dict, ocpv: str = "unknown", cnvv: str = "unknown") -> None:
+    """Print structured SEVERITY/FINDINGS/RECOMMENDATION/SUMMARY report."""
     if not nodes:
         print("SEVERITY: UNKNOWN")
         print("\nFINDINGS:")
-        print("  - Could not retrieve node data (oc not logged in or unavailable)")
+        print("  - No node data available")
         print("\nRECOMMENDATION:")
-        print("  - Log in to the cluster: oc login <cluster-url>")
+        print("  - Collect node data: oc get nodes -o json > nodes.json")
         print("\nSUMMARY: No cluster data available.")
         return
 
@@ -192,16 +143,15 @@ def main():
 
     print(f"SEVERITY: {severity}")
     print("\nFINDINGS:")
-    if findings:
-        for f in findings:
-            print(f"  - {f}")
-    else:
+    for f in findings:
+        print(f"  - {f}")
+    if not findings:
         print("  - No issues detected")
 
     print("\nRECOMMENDATION:")
-    if "pre-release" in " ".join(findings):
+    if any("pre-release" in f for f in findings):
         print("  - Upgrade to a stable OCP release for production workloads")
-    elif "Mixed kernel" in " ".join(findings) or "Mixed OS" in " ".join(findings):
+    elif any("Mixed" in f for f in findings):
         print("  - Update all nodes to the same version before investigating performance issues")
     else:
         print("  - Cluster looks healthy")
@@ -209,6 +159,30 @@ def main():
     workers = [n for n in nodes if n["role"] == "worker"]
     print(f"\nSUMMARY: {len(nodes)} nodes ({len(workers)} workers), "
           f"{sum(counts.values())} VMs running, severity: {severity}")
+
+
+def _load(path: str) -> dict:
+    """Load a JSON file."""
+    with open(path) as f:
+        return json.load(f)
+
+
+def main():
+    """Parse pre-collected OCP JSON artifacts and print a structured report."""
+    import argparse
+    parser = argparse.ArgumentParser(description="Analyze pre-collected OCP cluster data")
+    parser.add_argument("--nodes",   required=True, help="Path to: oc get nodes -o json")
+    parser.add_argument("--version", help="Path to: oc version -o json")
+    parser.add_argument("--vmis",    help="Path to: oc get vmi -A -o json")
+    args = parser.parse_args()
+
+    nodes_data = _load(args.nodes)
+    nodes  = parse_nodes(nodes_data)
+    counts = parse_vm_counts(_load(args.vmis)) if args.vmis else {}
+    ocpv   = parse_ocp_version(_load(args.version)) if args.version else "unknown"
+    cnvv   = "unknown"
+
+    analyze(nodes, counts, ocpv, cnvv)
 
 
 if __name__ == "__main__":

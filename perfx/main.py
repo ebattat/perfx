@@ -72,8 +72,18 @@ def _cluster_available():
 
 
 def _collect_cluster_summary():
-    """Run ocp-data skill at startup and print cluster summary with analysis."""
+    """Collect live cluster data via oc and print a summary using the ocp-data skill parser."""
     import importlib.util
+    import subprocess
+
+    def _oc_json(cmd):
+        """Run an oc command and return parsed JSON or None."""
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+            return __import__("json").loads(result.stdout) if result.returncode == 0 else None
+        except Exception:
+            return None
+
     script = Path(__file__).parent.parent / "skills" / "ocp-data" / "collect_ocp_data.py"
     if not script.exists():
         return
@@ -82,10 +92,15 @@ def _collect_cluster_summary():
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
 
-        ocpv   = mod.ocp_version()
-        cnvv   = mod.cnv_version()
-        nodes  = mod.node_data()
-        counts = mod.vm_counts()
+        version_data = _oc_json(["oc", "version", "-o", "json"]) or {}
+        csv_data     = _oc_json(["oc", "get", "csv", "-n", "openshift-cnv", "-o", "json"]) or {}
+        nodes_data   = _oc_json(["oc", "get", "nodes", "-o", "json"]) or {}
+        vmis_data    = _oc_json(["oc", "get", "vmi", "-A", "-o", "json"]) or {}
+
+        ocpv   = mod.parse_ocp_version(version_data)
+        cnvv   = mod.parse_cnv_version(csv_data)
+        nodes  = mod.parse_nodes(nodes_data)
+        counts = mod.parse_vm_counts(vmis_data)
 
         if not nodes:
             print("⚠️  Could not reach cluster (oc not logged in or unavailable)\n")

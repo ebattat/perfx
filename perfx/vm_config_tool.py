@@ -99,7 +99,7 @@ def check_vm_config(path: str) -> dict:
     if missing_keys:
         rows.append(_row("hyperv enlightenments", customer_hv, recommended_hv,
                          f"❌ MISSING — {','.join(missing_keys)}"))
-        issues += len(missing_keys)
+        issues += 1
     else:
         # check spinlocks value
         spinlocks_val = (hyperv.get("spinlocks") or {}).get("spinlocks")
@@ -138,7 +138,7 @@ def check_vm_config(path: str) -> dict:
             rows.append(_row("clock", customer_clock,
                              "hpet:false + hyperv + pit + rtc",
                              f"⚠️ {', '.join(clock_issues)}"))
-            issues += len(clock_issues)
+            issues += 1
         else:
             rows.append(_row("clock", "configured", "hpet:false + hyperv + pit + rtc", "✅ OK"))
 
@@ -237,7 +237,9 @@ def check_vm_config(path: str) -> dict:
     rows.append(_row("memory", mem, "as needed", "✅ OK" if mem != "not set" else "⚠️ not set"))
 
     severity = "PASS" if issues == 0 else ("CRITICAL" if issues > 5 else "NEEDS ATTENTION")
-    summary = f"{severity}: {sum(1 for r in rows if '✅' in r['status'])} passed, {issues} issues of {len(rows)} checks"
+    passed  = sum(1 for r in rows if "✅" in r["status"])
+    failed  = len(rows) - passed
+    summary = f"{severity}: {passed} passed, {failed} issues of {len(rows)} checks"
 
     log_file = _save_report(vm_name, "windows", rows, summary)
 
@@ -363,7 +365,9 @@ def check_linux_vm_config(path: str) -> dict:
                      "1 socket, 1 thread", "✅ OK"))
 
     severity = "PASS" if issues == 0 else ("CRITICAL" if issues > 5 else "NEEDS ATTENTION")
-    summary = f"{severity}: {sum(1 for r in rows if '✅' in r['status'])} passed, {issues} issues of {len(rows)} checks"
+    passed  = sum(1 for r in rows if "✅" in r["status"])
+    failed  = len(rows) - passed
+    summary = f"{severity}: {passed} passed, {failed} issues of {len(rows)} checks"
 
     log_file = _save_report(vm_name, "linux", rows, summary)
 

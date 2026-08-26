@@ -1,8 +1,7 @@
-"""Tests for skills/ocp-data/collect_ocp_data.py"""
+"""Tests for skills/ocp-data/collect_ocp_data.py — integration tests using local JSON fixtures."""
 import importlib.util
-import sys
+import json
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -11,6 +10,57 @@ spec = importlib.util.spec_from_file_location("collect_ocp_data", SCRIPT)
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 
+# ── JSON fixtures (no mocks — local data only) ────────────────────────────────
+
+NODES_DATA = {
+    "items": [
+        {
+            "metadata": {
+                "name": "worker-0",
+                "labels": {}
+            },
+            "status": {
+                "capacity":    {"cpu": "64", "memory": "524288000Ki"},
+                "allocatable": {"cpu": "63", "memory": "520192000Ki"},
+                "nodeInfo": {
+                    "kernelVersion": "5.14.0-427.el9.x86_64",
+                    "osImage": "Red Hat Enterprise Linux CoreOS 9.4"
+                }
+            }
+        },
+        {
+            "metadata": {
+                "name": "master-0",
+                "labels": {"node-role.kubernetes.io/control-plane": ""}
+            },
+            "status": {
+                "capacity":    {"cpu": "16", "memory": "65536Mi"},
+                "allocatable": {"cpu": "15", "memory": "63488Mi"},
+                "nodeInfo": {
+                    "kernelVersion": "5.14.0-427.el9.x86_64",
+                    "osImage": "Red Hat Enterprise Linux CoreOS 9.4"
+                }
+            }
+        }
+    ]
+}
+
+VMIS_DATA = {
+    "items": [
+        {"status": {"nodeName": "worker-0"}},
+        {"status": {"nodeName": "worker-0"}},
+        {"status": {"nodeName": "master-0"}},
+    ]
+}
+
+VERSION_DATA = {"openshiftVersion": "4.18.3"}
+CSV_DATA = {
+    "items": [
+        {"metadata": {"name": "kubevirt-hyperconverged-operator.v4.18.1"},
+         "spec": {"version": "4.18.1"}}
+    ]
+}
+
 
 class TestToGib:
     def test_ki_large(self):
@@ -18,7 +68,7 @@ class TestToGib:
 
     def test_ki_nonzero_preserves_value(self):
         result = mod._to_gib("524288Ki")
-        assert result != "0Gi"   # must not truncate nonzero values to 0
+        assert result != "0Gi"
         assert "Gi" in result
 
     def test_gi(self):
@@ -29,51 +79,15 @@ class TestToGib:
 
     def test_mi_fractional(self):
         result = mod._to_gib("1536Mi")
-        assert result != "0Gi"
-        assert "1.5Gi" in result or "Gi" in result
+        assert "1.5Gi" in result
 
     def test_unknown(self):
         assert mod._to_gib("unknown") == "unknown"
 
 
-class TestNodeData:
+class TestParseNodes:
     def test_parses_worker_and_control_plane(self):
-        fake_json = {
-            "items": [
-                {
-                    "metadata": {
-                        "name": "worker-0",
-                        "labels": {}
-                    },
-                    "status": {
-                        "capacity": {"cpu": "64", "memory": "262144Ki"},
-                        "allocatable": {"cpu": "63", "memory": "258048Ki"},
-                        "nodeInfo": {
-                            "kernelVersion": "5.14.0",
-                            "osImage": "Red Hat Enterprise Linux CoreOS 9.4"
-                        }
-                    }
-                },
-                {
-                    "metadata": {
-                        "name": "master-0",
-                        "labels": {"node-role.kubernetes.io/control-plane": ""}
-                    },
-                    "status": {
-                        "capacity": {"cpu": "16", "memory": "65536Ki"},
-                        "allocatable": {"cpu": "15", "memory": "63488Ki"},
-                        "nodeInfo": {
-                            "kernelVersion": "5.14.0",
-                            "osImage": "Red Hat Enterprise Linux CoreOS 9.4"
-                        }
-                    }
-                }
-            ]
-        }
-        import json
-        with patch.object(mod, "run", return_value=(json.dumps(fake_json), 0)):
-            nodes = mod.node_data()
-
+        nodes = mod.parse_nodes(NODES_DATA)
         assert len(nodes) == 2
         worker = next(n for n in nodes if n["name"] == "worker-0")
         master = next(n for n in nodes if n["name"] == "master-0")
@@ -81,27 +95,35 @@ class TestNodeData:
         assert master["role"] == "control-plane"
         assert worker["cpu"] == "64"
 
-    def test_returns_empty_on_error(self):
-        with patch.object(mod, "run", return_value=("", 1)):
-            nodes = mod.node_data()
-        assert nodes == []
+    def test_memory_not_zero_for_large_ki(self):
+        nodes = mod.parse_nodes(NODES_DATA)
+        worker = next(n for n in nodes if n["name"] == "worker-0")
+        assert worker["memory"] != "0Gi"
+        assert "Gi" in worker["memory"]
+
+    def test_empty_returns_empty(self):
+        assert mod.parse_nodes({}) == []
 
 
-class TestVmCounts:
+class TestParseVmCounts:
     def test_counts_vms_per_node(self):
-        fake_json = {
-            "items": [
-                {"status": {"nodeName": "worker-0"}},
-                {"status": {"nodeName": "worker-0"}},
-                {"status": {"nodeName": "worker-1"}},
-            ]
-        }
-        import json
-        with patch.object(mod, "run", return_value=(json.dumps(fake_json), 0)):
-            counts = mod.vm_counts()
-        assert counts == {"worker-0": 2, "worker-1": 1}
+        counts = mod.parse_vm_counts(VMIS_DATA)
+        assert counts["worker-0"] == 2
+        assert counts["master-0"] == 1
 
-    def test_returns_empty_on_error(self):
-        with patch.object(mod, "run", return_value=("", 1)):
-            counts = mod.vm_counts()
-        assert counts == {}
+    def test_empty_returns_empty(self):
+        assert mod.parse_vm_counts({}) == {}
+
+
+class TestParseVersions:
+    def test_ocp_version(self):
+        assert mod.parse_ocp_version(VERSION_DATA) == "4.18.3"
+
+    def test_ocp_version_unknown(self):
+        assert mod.parse_ocp_version({}) == "unknown"
+
+    def test_cnv_version(self):
+        assert mod.parse_cnv_version(CSV_DATA) == "4.18.1"
+
+    def test_cnv_not_installed(self):
+        assert mod.parse_cnv_version({"items": []}) == "not installed"
