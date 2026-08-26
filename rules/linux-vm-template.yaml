@@ -18,18 +18,24 @@ spec:
           sockets: 1
           threads: 1
         devices:
+          blockMultiQueue: true             # enables multi-queue for block devices (OCP 4.19+)
           disks:
           - disk:
               bus: virtio             # virtio = best performance
                                       # NEVER use bus: sata
+              cache: none             # enforce Direct I/O — prevents silent switch to buffered IO after live migration
             name: containerdisk
           - disk:
               bus: virtio
+              cache: none
             name: cloudinitdisk
           interfaces:
           - masquerade: {}
             model: virtio             # NEVER use model: e1000e
           networkInterfaceMultiqueue: true
+        ioThreads:
+          supplementalPoolThreadCount: 4    # start at 4; use 8-16 for fast storage (OCP 4.19+)
+                                            # Reference: https://developers.redhat.com/blog/2025/06/23/feature-introduction-multiple-iothreads-openshift-virtualization
         ioThreadsPolicy: supplementalPool   # OCP 4.19+ — offloads IO from vCPU threads
         resources:
           requests:
