@@ -65,3 +65,27 @@ class TestFetchClusterVmYaml:
     def test_returns_error_on_failure(self, oc_error):
         result = fetch_cluster_vm_yaml("missing-vm", "default")
         assert "error" in result
+
+
+class TestClusterIntegration:
+    """Integration tests — skipped when oc is not logged in."""
+
+    @pytest.fixture(autouse=True)
+    def require_cluster(self):
+        import subprocess
+        try:
+            result = subprocess.run(["oc", "whoami"], capture_output=True, timeout=5)
+            if result.returncode != 0:
+                pytest.skip("oc not logged in — skipping integration tests")
+        except Exception:
+            pytest.skip("oc not available — skipping integration tests")
+
+    def test_list_cluster_vms_returns_dict(self):
+        result = list_cluster_vms()
+        assert "vms" in result or "error" in result
+
+    def test_all_listed_vms_are_running(self):
+        result = list_cluster_vms()
+        if "vms" in result:
+            for vm in result["vms"]:
+                assert vm["status"].lower() == "running"

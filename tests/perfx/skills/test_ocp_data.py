@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-SCRIPT = Path(__file__).parent.parent.parent / "skills" / "ocp-data" / "collect_ocp_data.py"
+SCRIPT = Path(__file__).parent.parent.parent.parent / "skills" / "ocp-data" / "collect_ocp_data.py"
 spec = importlib.util.spec_from_file_location("collect_ocp_data", SCRIPT)
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
@@ -78,8 +78,7 @@ class TestToGib:
         assert mod._to_gib("2048Mi") == "2Gi"
 
     def test_mi_fractional(self):
-        result = mod._to_gib("1536Mi")
-        assert "1.5Gi" in result
+        assert mod._to_gib("1536Mi") == "1.5Gi"
 
     def test_unknown(self):
         assert mod._to_gib("unknown") == "unknown"

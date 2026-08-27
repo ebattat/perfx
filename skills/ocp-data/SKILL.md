@@ -9,6 +9,7 @@ Analyze pre-collected OCP cluster data for issue investigation: versions, node c
    oc get nodes -o json > nodes.json
    oc version -o json  > version.json
    oc get vmi -A -o json > vmis.json
+   oc get csv -n openshift-cnv -o json > cnv.json
    ```
 
 2. Run the analysis script on the local files:
@@ -16,7 +17,8 @@ Analyze pre-collected OCP cluster data for issue investigation: versions, node c
    python3 skills/ocp-data/collect_ocp_data.py \
      --nodes nodes.json \
      --version version.json \
-     --vmis vmis.json
+     --vmis vmis.json \
+     --cnv cnv.json
    ```
 
 3. Report the output to the user

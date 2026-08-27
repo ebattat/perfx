@@ -329,8 +329,10 @@ def main():
         _list_vms()
         return
 
+    fetched_tmp = None
     if args.vm:
         vm_path = _fetch_vm_yaml(args.vm, args.namespace)
+        fetched_tmp = vm_path
         print(f"Fetched VM '{args.vm}' from cluster\n")
     elif args.vm_yaml:
         vm_path = args.vm_yaml
@@ -338,15 +340,25 @@ def main():
         parser.print_help()
         sys.exit(1)
 
-    report = check(vm_path)
-    print(report)
+    try:
+        # auto-detect Windows vs Linux
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+        from perfx.vm_config_tool import detect_os
+        os_type = detect_os(vm_path)
+        print(f"Detected OS: {os_type}\n")
 
-    LOGS_DIR.mkdir(exist_ok=True)
-    ts   = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    name = args.vm or Path(vm_path).stem
-    out  = LOGS_DIR / f"vm_config_audit_{name}_{ts}.log"
-    out.write_text(report)
-    print(f"\nReport saved to: {out}")
+        report = check(vm_path)
+        print(report)
+
+        LOGS_DIR.mkdir(exist_ok=True)
+        ts   = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        name = args.vm or Path(vm_path).stem
+        out  = LOGS_DIR / f"vm_config_audit_{name}_{ts}.log"
+        out.write_text(report)
+        print(f"\nReport saved to: {out}")
+    finally:
+        if fetched_tmp:
+            Path(fetched_tmp).unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

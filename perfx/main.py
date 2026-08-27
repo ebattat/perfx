@@ -95,12 +95,12 @@ def _collect_cluster_summary():
         version_data = _oc_json(["oc", "version", "-o", "json"]) or {}
         csv_data     = _oc_json(["oc", "get", "csv", "-n", "openshift-cnv", "-o", "json"]) or {}
         nodes_data   = _oc_json(["oc", "get", "nodes", "-o", "json"]) or {}
-        vmis_data    = _oc_json(["oc", "get", "vmi", "-A", "-o", "json"]) or {}
+        vmis_data    = _oc_json(["oc", "get", "vmi", "-A", "-o", "json"])
 
         ocpv   = mod.parse_ocp_version(version_data)
         cnvv   = mod.parse_cnv_version(csv_data)
         nodes  = mod.parse_nodes(nodes_data)
-        counts = mod.parse_vm_counts(vmis_data)
+        counts = mod.parse_vm_counts(vmis_data) if vmis_data is not None else {}
 
         if not nodes:
             print("⚠️  Could not reach cluster (oc not logged in or unavailable)\n")

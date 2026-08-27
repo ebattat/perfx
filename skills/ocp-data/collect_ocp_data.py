@@ -174,13 +174,21 @@ def main():
     parser.add_argument("--nodes",   required=True, help="Path to: oc get nodes -o json")
     parser.add_argument("--version", help="Path to: oc version -o json")
     parser.add_argument("--vmis",    help="Path to: oc get vmi -A -o json")
+    parser.add_argument("--cnv",     help="Path to: oc get csv -n openshift-cnv -o json")
     args = parser.parse_args()
 
     nodes_data = _load(args.nodes)
-    nodes  = parse_nodes(nodes_data)
+    nodes = parse_nodes(nodes_data)
+    if not nodes:
+        print("SEVERITY: UNKNOWN")
+        print("\nFINDINGS:\n  - No node data found in provided file")
+        print("\nRECOMMENDATION:\n  - Verify: oc get nodes -o json > nodes.json")
+        print("\nSUMMARY: No cluster data available.")
+        return
+
     counts = parse_vm_counts(_load(args.vmis)) if args.vmis else {}
     ocpv   = parse_ocp_version(_load(args.version)) if args.version else "unknown"
-    cnvv   = "unknown"
+    cnvv   = parse_cnv_version(_load(args.cnv)) if args.cnv else "unknown"
 
     analyze(nodes, counts, ocpv, cnvv)
 
