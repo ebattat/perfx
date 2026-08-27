@@ -295,34 +295,25 @@ def check(vm_path):
 
 
 def _list_vms():
-    """List all running VMs across all namespaces."""
-    import subprocess
-    result = subprocess.run(
-        ["oc", "get", "vm", "-A", "-o",
-         "custom-columns=NAMESPACE:.metadata.namespace,NAME:.metadata.name,STATUS:.status.printableStatus"],
-        capture_output=True, text=True, timeout=15
-    )
-    if result.returncode != 0:
-        print("ERROR: cannot list VMs — is oc logged in?", file=sys.stderr)
+    """List all running VMs across all namespaces using cluster_tool."""
+    sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+    from perfx.cluster_tool import list_cluster_vms
+    result = list_cluster_vms()
+    if "error" in result:
+        print(f"ERROR: {result['error']}", file=sys.stderr)
         sys.exit(1)
-    print(result.stdout)
+    print(result["table"])
 
 
 def _fetch_vm_yaml(name, namespace):
-    """Fetch VM YAML from cluster and write to a temp file."""
-    import subprocess, tempfile
-    ns_flag = ["-n", namespace] if namespace else ["-A"]
-    result = subprocess.run(
-        ["oc", "get", "vm", name] + ([] if not namespace else ["-n", namespace]) + ["-o", "yaml"],
-        capture_output=True, text=True, timeout=15
-    )
-    if result.returncode != 0:
-        print(f"ERROR: cannot fetch VM '{name}': {result.stderr.strip()}", file=sys.stderr)
+    """Fetch VM YAML from cluster using cluster_tool and return temp file path."""
+    sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+    from perfx.cluster_tool import fetch_cluster_vm_yaml
+    result = fetch_cluster_vm_yaml(name, namespace)
+    if "error" in result:
+        print(f"ERROR: {result['error']}", file=sys.stderr)
         sys.exit(1)
-    tmp = tempfile.NamedTemporaryFile(suffix=".yaml", mode="w", delete=False)
-    tmp.write(result.stdout)
-    tmp.close()
-    return tmp.name
+    return result["path"]
 
 
 def main():
