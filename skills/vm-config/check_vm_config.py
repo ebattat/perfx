@@ -294,22 +294,71 @@ def check(vm_path):
     return "\n".join(lines)
 
 
+def _list_vms():
+    """List all running VMs across all namespaces using cluster_tool."""
+    sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+    from perfx.cluster_tool import list_cluster_vms
+    result = list_cluster_vms()
+    if "error" in result:
+        print(f"ERROR: {result['error']}", file=sys.stderr)
+        sys.exit(1)
+    print(result["table"])
+
+
+def _fetch_vm_yaml(name, namespace):
+    """Fetch VM YAML from cluster using cluster_tool and return temp file path."""
+    sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+    from perfx.cluster_tool import fetch_cluster_vm_yaml
+    result = fetch_cluster_vm_yaml(name, namespace)
+    if "error" in result:
+        print(f"ERROR: {result['error']}", file=sys.stderr)
+        sys.exit(1)
+    return result["path"]
+
+
 def main():
-    if len(sys.argv) < 2:
-        print(f"Usage: {sys.argv[0]} <vm.yaml>")
+    import argparse
+    parser = argparse.ArgumentParser(description="Check VM configuration against best practices")
+    parser.add_argument("vm_yaml", nargs="?", help="Path to VM YAML file")
+    parser.add_argument("--vm", help="VM name to fetch from cluster")
+    parser.add_argument("--namespace", "-n", help="Namespace of the VM (default: all)")
+    parser.add_argument("--list", action="store_true", help="List all running VMs")
+    args = parser.parse_args()
+
+    if args.list:
+        _list_vms()
+        return
+
+    fetched_tmp = None
+    if args.vm:
+        vm_path = _fetch_vm_yaml(args.vm, args.namespace)
+        fetched_tmp = vm_path
+        print(f"Fetched VM '{args.vm}' from cluster\n")
+    elif args.vm_yaml:
+        vm_path = args.vm_yaml
+    else:
+        parser.print_help()
         sys.exit(1)
 
-    vm_path = sys.argv[1]
-    report  = check(vm_path)
-    print(report)
+    try:
+        # auto-detect Windows vs Linux
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+        from perfx.vm_config_tool import detect_os
+        os_type = detect_os(vm_path)
+        print(f"Detected OS: {os_type}\n")
 
-    # save to logs/
-    LOGS_DIR.mkdir(exist_ok=True)
-    ts   = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    name = Path(vm_path).stem
-    out  = LOGS_DIR / f"vm_config_audit_{name}_{ts}.log"
-    out.write_text(report)
-    print(f"\nReport saved to: {out}")
+        report = check(vm_path)
+        print(report)
+
+        LOGS_DIR.mkdir(exist_ok=True)
+        ts   = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        name = args.vm or Path(vm_path).stem
+        out  = LOGS_DIR / f"vm_config_audit_{name}_{ts}.log"
+        out.write_text(report)
+        print(f"\nReport saved to: {out}")
+    finally:
+        if fetched_tmp:
+            Path(fetched_tmp).unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

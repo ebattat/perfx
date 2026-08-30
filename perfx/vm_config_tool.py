@@ -10,6 +10,32 @@ HYPERV_KEYS = [
     "synic", "synictimer", "spinlocks",
 ]
 
+def detect_os(path: str) -> str:
+    """Detect whether a VM YAML is for Windows or Linux.
+
+    Returns 'windows' if hyperv features or a windows preference are present,
+    otherwise returns 'linux'.
+    """
+    try:
+        doc = _load_yaml(path)
+    except Exception:
+        return "linux"
+    domain = (
+        (doc.get("spec") or {})
+        .get("template", {})
+        .get("spec", {})
+        .get("domain", {})
+    )
+    # hyperv features present → Windows
+    if domain.get("features", {}).get("hyperv"):
+        return "windows"
+    # preference name contains 'windows' → Windows
+    preference = (doc.get("spec") or {}).get("preference", {}).get("name", "")
+    if "windows" in preference.lower():
+        return "windows"
+    return "linux"
+
+
 CLOCK_CHECKS = {
     "hpet":   ("present", False),
     "hyperv": None,
@@ -99,7 +125,7 @@ def check_vm_config(path: str) -> dict:
     if missing_keys:
         rows.append(_row("hyperv enlightenments", customer_hv, recommended_hv,
                          f"❌ MISSING — {','.join(missing_keys)}"))
-        issues += len(missing_keys)
+        issues += 1
     else:
         # check spinlocks value
         spinlocks_val = (hyperv.get("spinlocks") or {}).get("spinlocks")
@@ -138,7 +164,7 @@ def check_vm_config(path: str) -> dict:
             rows.append(_row("clock", customer_clock,
                              "hpet:false + hyperv + pit + rtc",
                              f"⚠️ {', '.join(clock_issues)}"))
-            issues += len(clock_issues)
+            issues += 1
         else:
             rows.append(_row("clock", "configured", "hpet:false + hyperv + pit + rtc", "✅ OK"))
 
@@ -230,14 +256,18 @@ def check_vm_config(path: str) -> dict:
     sockets = cpu.get("sockets", "")
     threads = cpu.get("threads", "")
     cpu_str = f"{cores} cores, {sockets} socket" if cores else "not set"
-    rows.append(_row("cpu", cpu_str, "1 socket, 1 thread", "✅ OK" if sockets else "⚠️ check"))
+    cpu_set = bool(sockets or threads or cores)
+    rows.append(_row("cpu", cpu_str, "sockets/threads must be set",
+                     "✅ OK" if cpu_set else "⚠️ NOT SET"))
 
     # ── memory ────────────────────────────────────────────────────────────────
     mem = (resources.get("requests") or {}).get("memory", "not set")
     rows.append(_row("memory", mem, "as needed", "✅ OK" if mem != "not set" else "⚠️ not set"))
 
     severity = "PASS" if issues == 0 else ("CRITICAL" if issues > 5 else "NEEDS ATTENTION")
-    summary = f"{severity}: {sum(1 for r in rows if '✅' in r['status'])} passed, {issues} issues of {len(rows)} checks"
+    passed  = sum(1 for r in rows if "✅" in r["status"])
+    failed  = len(rows) - passed
+    summary = f"{severity}: {passed} passed, {failed} issues of {len(rows)} checks"
 
     log_file = _save_report(vm_name, "windows", rows, summary)
 
@@ -363,7 +393,9 @@ def check_linux_vm_config(path: str) -> dict:
                      "1 socket, 1 thread", "✅ OK"))
 
     severity = "PASS" if issues == 0 else ("CRITICAL" if issues > 5 else "NEEDS ATTENTION")
-    summary = f"{severity}: {sum(1 for r in rows if '✅' in r['status'])} passed, {issues} issues of {len(rows)} checks"
+    passed  = sum(1 for r in rows if "✅" in r["status"])
+    failed  = len(rows) - passed
+    summary = f"{severity}: {passed} passed, {failed} issues of {len(rows)} checks"
 
     log_file = _save_report(vm_name, "linux", rows, summary)
 

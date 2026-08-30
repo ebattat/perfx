@@ -26,10 +26,11 @@ def _run_main(argv, inputs, monkeypatch, mock_agent=None, agent_side_effect=None
 
     with patch("sys.argv", argv):
         with patch("perfx.main.Agent", return_value=mock_agent):
-            with pytest.raises(SystemExit) as exc_info:
-                # Re-import to pick up fresh module state each time
-                import perfx.main as main_module
-                main_module.main()
+            with patch("perfx.main._cluster_available", return_value=False):
+                with pytest.raises(SystemExit) as exc_info:
+                    # Re-import to pick up fresh module state each time
+                    import perfx.main as main_module
+                    main_module.main()
     return exc_info.value
 
 
@@ -187,3 +188,31 @@ class TestMainAgentChat:
 
         captured = capsys.readouterr()
         assert "org/myrepo" in captured.out
+
+
+class TestClusterStartup:
+    def test_cluster_available_returns_false_when_oc_missing(self):
+        """_cluster_available returns False when oc is not found."""
+        from unittest.mock import patch
+        import subprocess
+        import perfx.main as main_module
+        with patch("subprocess.run", side_effect=FileNotFoundError):
+            assert main_module._cluster_available() is False
+
+    def test_cluster_available_returns_false_on_nonzero(self):
+        """_cluster_available returns False when oc whoami fails."""
+        from unittest.mock import patch, MagicMock
+        import perfx.main as main_module
+        mock = MagicMock()
+        mock.returncode = 1
+        with patch("subprocess.run", return_value=mock):
+            assert main_module._cluster_available() is False
+
+    def test_collect_cluster_summary_no_crash_without_cluster(self, capsys):
+        """_collect_cluster_summary handles missing cluster gracefully."""
+        from unittest.mock import patch
+        import perfx.main as main_module
+        with patch.object(main_module, "_cluster_available", return_value=False):
+            main_module._collect_cluster_summary()
+        # no output expected, no crash
+        assert True

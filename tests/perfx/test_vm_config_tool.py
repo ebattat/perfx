@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 import perfx.vm_config_tool as vm_mod
-from perfx.vm_config_tool import check_vm_config, check_linux_vm_config, _save_report
+from perfx.vm_config_tool import check_vm_config, check_linux_vm_config, detect_os, _save_report
 
 
 # ---------------------------------------------------------------------------
@@ -518,6 +518,60 @@ class TestCheckVmConfigNicModel:
         nic_rows = [r for r in result["rows"] if "model" in r["setting"]]
         assert nic_rows
         assert all("✅" in r["status"] for r in nic_rows)
+
+
+class TestDetectOs:
+    def test_detects_windows_via_hyperv(self, tmp_path):
+        yaml_text = textwrap.dedent("""\
+            metadata:
+              name: win-vm
+            spec:
+              template:
+                spec:
+                  domain:
+                    features:
+                      hyperv:
+                        relaxed: {}
+        """)
+        f = tmp_path / "vm.yaml"
+        f.write_text(yaml_text)
+        assert detect_os(str(f)) == "windows"
+
+    def test_detects_windows_via_preference(self, tmp_path):
+        yaml_text = textwrap.dedent("""\
+            metadata:
+              name: win-vm
+            spec:
+              preference:
+                name: windows.2k25.virtio
+              template:
+                spec:
+                  domain: {}
+        """)
+        f = tmp_path / "vm.yaml"
+        f.write_text(yaml_text)
+        assert detect_os(str(f)) == "windows"
+
+    def test_detects_linux_by_default(self, tmp_path):
+        yaml_text = textwrap.dedent("""\
+            metadata:
+              name: linux-vm
+            spec:
+              template:
+                spec:
+                  domain:
+                    devices:
+                      disks: []
+        """)
+        f = tmp_path / "vm.yaml"
+        f.write_text(yaml_text)
+        assert detect_os(str(f)) == "linux"
+
+    def test_windows_template_detected(self):
+        assert detect_os("rules/windows-vm-template.yaml") == "windows"
+
+    def test_linux_template_detected(self):
+        assert detect_os("rules/linux-vm-template.yaml") == "linux"
 
 
 class TestSaveReport:

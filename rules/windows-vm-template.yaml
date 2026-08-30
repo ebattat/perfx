@@ -36,6 +36,7 @@ spec:
               tickPolicy: catchup
           utc: {}
         cpu:
+          cores: <set>              # set based on workload requirements
           sockets: 1
           threads: 1
         devices:
@@ -48,10 +49,15 @@ spec:
               # io: native applied automatically for block volumes
               # For filesystem volumes: use preallocation to enable io: native
             bootOrder: 1
+          inputs:
+          - bus: virtio
+            name: tablet
+            type: tablet
           interfaces:
           - masquerade: {}
             model: virtio             # NEVER use model: e1000e — poor performance
           networkInterfaceMultiqueue: true
+          tpm: {}
         features:
           acpi: {}
           apic: {}
