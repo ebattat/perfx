@@ -53,7 +53,7 @@ def _build_system_instruction() -> str:
         "3. If more than 1 VM is found — list all VMs clearly (namespace, name, status) and ask the user which one to analyze. Once user chooses, call fetch_cluster_vm_yaml then analyze. "
         "4. If no VMs found — tell the user no VMs are running on the cluster. "
         "If a file path IS provided — call check_vm_config or check_linux_vm_config directly without listing VMs. "
-        "To determine Windows vs Linux: YAML contains 'hyperv' or 'windows' → use check_vm_config. Otherwise → use check_linux_vm_config. "
+        "To determine Windows vs Linux: call detect_os(path) — it returns 'windows' or 'linux'. Then call check_vm_config for Windows or check_linux_vm_config for Linux. "
         "After the tool runs, ALWAYS display: "
         "1. VM name and namespace at the top of the report "
         "2. The 'table' field EXACTLY as returned (pre-formatted — do not modify it) "

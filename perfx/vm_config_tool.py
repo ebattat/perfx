@@ -10,6 +10,32 @@ HYPERV_KEYS = [
     "synic", "synictimer", "spinlocks",
 ]
 
+def detect_os(path: str) -> str:
+    """Detect whether a VM YAML is for Windows or Linux.
+
+    Returns 'windows' if hyperv features or a windows preference are present,
+    otherwise returns 'linux'.
+    """
+    try:
+        doc = _load_yaml(path)
+    except Exception:
+        return "linux"
+    domain = (
+        (doc.get("spec") or {})
+        .get("template", {})
+        .get("spec", {})
+        .get("domain", {})
+    )
+    # hyperv features present → Windows
+    if domain.get("features", {}).get("hyperv"):
+        return "windows"
+    # preference name contains 'windows' → Windows
+    preference = (doc.get("spec") or {}).get("preference", {}).get("name", "")
+    if "windows" in preference.lower():
+        return "windows"
+    return "linux"
+
+
 CLOCK_CHECKS = {
     "hpet":   ("present", False),
     "hyperv": None,
@@ -230,7 +256,9 @@ def check_vm_config(path: str) -> dict:
     sockets = cpu.get("sockets", "")
     threads = cpu.get("threads", "")
     cpu_str = f"{cores} cores, {sockets} socket" if cores else "not set"
-    rows.append(_row("cpu", cpu_str, "1 socket, 1 thread", "✅ OK" if sockets else "⚠️ check"))
+    cpu_set = bool(sockets or threads or cores)
+    rows.append(_row("cpu", cpu_str, "sockets/threads must be set",
+                     "✅ OK" if cpu_set else "⚠️ NOT SET"))
 
     # ── memory ────────────────────────────────────────────────────────────────
     mem = (resources.get("requests") or {}).get("memory", "not set")

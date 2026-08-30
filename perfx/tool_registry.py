@@ -1,5 +1,5 @@
 from google.genai import types as gtypes
-from perfx.vm_config_tool import check_vm_config, check_linux_vm_config
+from perfx.vm_config_tool import check_vm_config, check_linux_vm_config, detect_os
 from perfx.knowledge_tool import read_rules, read_file
 from perfx.cluster_tool import list_cluster_vms, fetch_cluster_vm_yaml
 from perfx.gdrive.gdrive import list_gdrive_folder, read_gdrive, search_gdrive
@@ -30,6 +30,7 @@ DISPATCH = {
     "search_gdrive": search_gdrive,
     "check_vm_config": check_vm_config,
     "check_linux_vm_config": check_linux_vm_config,
+    "detect_os": detect_os,
     "github_get_issue": github_get_issue,
     "github_list_issues": github_list_issues,
     "github_search_issues": github_search_issues,

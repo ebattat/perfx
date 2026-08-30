@@ -36,6 +36,7 @@ spec:
               tickPolicy: catchup
           utc: {}
         cpu:
+          cores: <set>              # set based on workload requirements
           sockets: 1
           threads: 1
         devices:
