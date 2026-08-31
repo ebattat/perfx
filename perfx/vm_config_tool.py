@@ -476,6 +476,7 @@ def _run_vm_config_check(path: str, os_type: str = None, cleanup: bool = False) 
             compact.append(f"\n{summary_line.strip()}")
         if log_line:
             compact.append(log_line)
+        compact.append("\nINSTRUCTION: Reply in 2 sentences max — state severity and tell the user the full report is in the log file. Do not list individual findings.")
 
         return {
             "severity": "CRITICAL" if "❌" in full_output else "PASS",
