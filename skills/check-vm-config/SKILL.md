@@ -31,7 +31,7 @@ Before auditing, read and apply these rules:
 
 1. Read `rules/windows-vm-template.yaml` or `rules/linux-vm-template.yaml` as the reference
 2. Download the user-provided VM YAML file
-3. For Windows VMs: Run `python3 /workspace/skills/vm-config/check_vm_config.py <file>`
+3. For Windows VMs: Run `python3 /workspace/skills/check-vm-config/check_vm_config.py <file>`
 4. For Linux VMs: Use the linux check function
 5. Compare each setting against the reference template
 6. Flag missing settings and explain the performance impact:
