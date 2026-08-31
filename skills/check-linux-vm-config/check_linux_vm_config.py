@@ -136,6 +136,15 @@ def check(vm_path):
     else:
         _ok("ioThreads", "supplementalPoolThreadCount")
 
+    # ── evictionStrategy (optional) ──────────────────────────────────────────
+    spec = (doc.get("spec") or {}).get("template", {}).get("spec", {})
+    eviction = spec.get("evictionStrategy")
+    if checks.get("evictionStrategy") == "LiveMigrate":
+        if eviction != "LiveMigrate":
+            _warn("spec", "evictionStrategy", f"={eviction!r} — set to 'LiveMigrate' to avoid shutdown on node drain")
+        else:
+            _ok("spec", "evictionStrategy")
+
     # ── output ────────────────────────────────────────────────────────────────
     lines = []
     lines.append("=" * 65)
