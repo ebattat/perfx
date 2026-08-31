@@ -598,53 +598,29 @@ def _fetch_vm_yaml(name, namespace):
 
 def main():
     import argparse
-    parser = argparse.ArgumentParser(description="Check VM configuration against best practices")
-    parser.add_argument("vm_yaml", nargs="?", help="Path to VM YAML file")
-    parser.add_argument("--vm", help="VM name to fetch from cluster")
-    parser.add_argument("--namespace", "-n", help="Namespace of the VM")
-    parser.add_argument("--list", action="store_true", help="List all running VMs")
+    parser = argparse.ArgumentParser(description="Check Windows VM YAML against best practices")
+    parser.add_argument("vm_yaml", help="Path to VM YAML file")
     parser.add_argument("--os", choices=["windows", "linux"], help="Override OS detection")
     args = parser.parse_args()
 
-    if args.list:
-        _list_vms()
-        return
+    vm_path = args.vm_yaml
 
-    fetched_tmp = None
-    if args.vm:
-        if not args.namespace:
-            print("ERROR: --namespace is required when --vm is specified", file=sys.stderr)
-            sys.exit(1)
-        vm_path = _fetch_vm_yaml(args.vm, args.namespace)
-        fetched_tmp = vm_path
-        print(f"Fetched VM '{args.vm}' from cluster\n")
-    elif args.vm_yaml:
-        vm_path = args.vm_yaml
-    else:
-        parser.print_help()
+    detected_os = args.os or _detect_os(vm_path)
+    if detected_os == "linux":
+        print("ERROR: VM detected as Linux — use check_linux_vm_config.py for Linux VMs.",
+              file=sys.stderr)
         sys.exit(1)
+    if detected_os == "unknown":
+        print("Note: OS not detected from YAML — running Windows check (use --os to override).")
 
-    try:
-        detected_os = args.os or _detect_os(vm_path)
-        if detected_os == "linux":
-            print("ERROR: VM detected as Linux — use check_linux_vm_config.py for Linux VMs.",
-                  file=sys.stderr)
-            sys.exit(1)
-        if detected_os == "unknown":
-            print("Note: OS not detected from YAML — running Windows check (use --os to override).")
+    report = check(vm_path)
+    print(report)
 
-        report = check(vm_path)
-        print(report)
-
-        LOGS_DIR.mkdir(exist_ok=True)
-        ts   = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        name = args.vm or Path(vm_path).stem
-        out  = LOGS_DIR / f"perfx_{ts}.log"
-        out.write_text(report)
-        print(f"\nReport saved to: {out}")
-    finally:
-        if fetched_tmp:
-            Path(fetched_tmp).unlink(missing_ok=True)
+    LOGS_DIR.mkdir(exist_ok=True)
+    ts  = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    out = LOGS_DIR / f"perfx_{ts}.log"
+    out.write_text(report)
+    print(f"\nReport saved to: {out}")
 
 
 if __name__ == "__main__":

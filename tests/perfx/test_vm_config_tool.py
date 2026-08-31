@@ -593,6 +593,64 @@ class TestDetectOs:
         assert detect_os("rules/linux-vm-example.yaml") == "linux"
 
 
+class TestRunVmConfigCheck:
+    """Integration tests for _run_vm_config_check routing."""
+
+    WINDOWS_YAML = textwrap.dedent("""\
+        metadata:
+          name: test-win-vm
+        spec:
+          template:
+            spec:
+              domain:
+                features:
+                  hyperv:
+                    ipi: {}
+                devices:
+                  disks: []
+    """)
+
+    LINUX_YAML = textwrap.dedent("""\
+        metadata:
+          name: test-linux-vm
+        spec:
+          template:
+            metadata:
+              annotations:
+                vm.kubevirt.io/os: rhel9
+            spec:
+              domain:
+                devices:
+                  disks: []
+    """)
+
+    def test_windows_yaml_runs_windows_checker(self, tmp_path):
+        f = tmp_path / "win.yaml"
+        f.write_text(self.WINDOWS_YAML)
+        result = vm_mod.check_vm_config_from_path(str(f), os_type="windows")
+        assert result["used_os"] == "windows"
+        assert "WINDOWS" in result["table"] or result["severity"] in ("CRITICAL", "PASS")
+
+    def test_linux_yaml_runs_linux_checker(self, tmp_path):
+        f = tmp_path / "linux.yaml"
+        f.write_text(self.LINUX_YAML)
+        result = vm_mod.check_vm_config_from_path(str(f), os_type="linux")
+        assert result["used_os"] == "linux"
+        assert "LINUX" in result["table"] or result["severity"] in ("CRITICAL", "PASS")
+
+    def test_auto_detects_windows(self, tmp_path):
+        f = tmp_path / "win.yaml"
+        f.write_text(self.WINDOWS_YAML)
+        result = vm_mod.check_vm_config_from_path(str(f))
+        assert result["detected_os"] == "windows"
+
+    def test_auto_detects_linux(self, tmp_path):
+        f = tmp_path / "linux.yaml"
+        f.write_text(self.LINUX_YAML)
+        result = vm_mod.check_vm_config_from_path(str(f))
+        assert result["detected_os"] == "linux"
+
+
 class TestSaveReport:
     def test_creates_log_file_with_expected_content(self, tmp_path, monkeypatch):
         monkeypatch.setattr(vm_mod, "LOGS_DIR", tmp_path)

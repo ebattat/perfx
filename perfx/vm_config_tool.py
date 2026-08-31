@@ -423,6 +423,11 @@ def check_vm_config_from_path(path: str, os_type: str = None) -> dict:
 
 
 def _run_vm_config_check(path: str, os_type: str = None, cleanup: bool = False) -> dict:
+    """Run the appropriate VM config skill script (check-windows-vm-config or check-linux-vm-config).
+
+    Routes to check_linux_vm_config.py for Linux, check_windows_vm_config.py for Windows/unknown.
+    Returns a compact dict with severity, findings, and log path.
+    """
     import subprocess
     try:
         detected = detect_os(path)

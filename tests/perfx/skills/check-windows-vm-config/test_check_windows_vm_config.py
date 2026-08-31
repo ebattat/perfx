@@ -137,15 +137,14 @@ class TestCheckFunction:
         ok_pos = report.find("✅")
         assert fail_pos < ok_pos
 
-    def test_namespace_required_with_vm_flag(self):
-        """--namespace must be provided when --vm is used."""
+    def test_missing_vm_yaml_arg_exits(self):
+        """vm_yaml argument is required."""
         import subprocess
         result = subprocess.run(
-            ["python3", str(SCRIPT), "--vm", "test-vm"],
+            ["python3", str(SCRIPT)],
             capture_output=True, text=True, timeout=10
         )
         assert result.returncode != 0
-        assert "namespace" in result.stderr.lower()
 
     def test_severity_critical_when_failures(self, tmp_path):
         f = tmp_path / "vm.yaml"
