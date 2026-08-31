@@ -1,0 +1,16 @@
+# Linux VM Required Configuration Checks
+# Source: https://developers.redhat.com/blog/2026/05/06/best-practice-configuration-and-tuning-linux-and-windows-vms#vm_definition
+# Reference: https://developers.redhat.com/blog/2025/06/23/feature-introduction-multiple-iothreads-openshift-virtualization
+
+devices:
+  blockMultiQueue: true
+  networkInterfaceMultiqueue: true
+  disk:
+    root_bus: virtio               # root disk (bootOrder: 1) must use virtio
+    root_cache: none               # cache: none on root disk — prevents silent switch to buffered IO after live migration
+  NIC:
+    model: virtio                  # NEVER use e1000 or e1000e — causes significant network performance degradation
+
+ioThreads:
+  supplementalPoolThreadCount: required   # must be set; value depends on vCPU count (start at 4)
+ioThreadsPolicy: supplementalPool

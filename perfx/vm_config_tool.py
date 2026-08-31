@@ -1,4 +1,5 @@
 import re
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -251,19 +252,6 @@ def check_vm_config(path: str) -> dict:
     if bmq is not True:
         issues += 1
 
-    # ── cpu ───────────────────────────────────────────────────────────────────
-    cores   = cpu.get("cores", "")
-    sockets = cpu.get("sockets", "")
-    threads = cpu.get("threads", "")
-    cpu_str = f"{cores} cores, {sockets} socket" if cores else "not set"
-    cpu_set = bool(sockets or threads or cores)
-    rows.append(_row("cpu", cpu_str, "sockets/threads must be set",
-                     "✅ OK" if cpu_set else "⚠️ NOT SET"))
-
-    # ── memory ────────────────────────────────────────────────────────────────
-    mem = (resources.get("requests") or {}).get("memory", "not set")
-    rows.append(_row("memory", mem, "as needed", "✅ OK" if mem != "not set" else "⚠️ not set"))
-
     severity = "PASS" if issues == 0 else ("CRITICAL" if issues > 5 else "NEEDS ATTENTION")
     passed  = sum(1 for r in rows if "✅" in r["status"])
     failed  = len(rows) - passed
@@ -407,3 +395,33 @@ def check_linux_vm_config(path: str) -> dict:
         "rows": rows,
         "log_file": log_file,
     }
+
+
+def check_vm_config_from_content(yaml_content: str, os_type: str = None) -> dict:
+    """Check VM config from YAML content string using the check-vm-config skill script.
+
+    os_type: 'windows' or 'linux'. If not provided, auto-detects from content.
+    Always confirm os_type with the user before calling this function.
+    """
+    import subprocess
+    tmp = tempfile.NamedTemporaryFile(suffix=".yaml", mode="w", delete=False)
+    tmp.write(yaml_content)
+    tmp.close()
+    try:
+        detected = detect_os(tmp.name)
+        resolved = os_type if os_type in ("windows", "linux") else detected
+        skill_script = Path(__file__).parent.parent / "skills" / "check-vm-config" / "check_vm_config.py"
+        result = subprocess.run(
+            ["python3", str(skill_script), tmp.name],
+            capture_output=True, text=True, timeout=30
+        )
+        output = result.stdout if result.stdout else result.stderr
+        return {
+            "severity": "CRITICAL" if "❌" in output else "PASS",
+            "detected_os": detected,
+            "used_os": resolved,
+            "table": output,
+            "summary": f"VM config checked as {resolved}",
+        }
+    finally:
+        Path(tmp.name).unlink(missing_ok=True)

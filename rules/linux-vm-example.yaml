@@ -9,7 +9,7 @@ spec:
   # Always apply a VirtualMachineClusterPreference — applies critical optimizations automatically
   # List available: oc get VirtualMachineClusterPreference
   preference:
-    name: <rhel.9.virtio or appropriate preference>
+    name: <set>                     # List available: oc get VirtualMachineClusterPreference
   template:
     spec:
       domain:
@@ -34,8 +34,8 @@ spec:
             model: virtio             # NEVER use model: e1000e
           networkInterfaceMultiqueue: true
         ioThreads:
-          supplementalPoolThreadCount: 4    # start at 4; use 8-16 for fast storage (OCP 4.19+)
-                                            # Reference: https://developers.redhat.com/blog/2025/06/23/feature-introduction-multiple-iothreads-openshift-virtualization
+          supplementalPoolThreadCount: <set>  # depends on vCPU count — start at 4, scale up for fast storage (OCP 4.19+)
+                                              # Reference: https://developers.redhat.com/blog/2025/06/23/feature-introduction-multiple-iothreads-openshift-virtualization
         ioThreadsPolicy: supplementalPool   # OCP 4.19+ — offloads IO from vCPU threads
         resources:
           requests:

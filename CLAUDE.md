@@ -40,8 +40,8 @@ When adding or editing a file in `rules/` or `methodology/`:
 3. Add a step in `## Steps` that tells chai-bot to read the rule before analyzing
 
 **Mapping:**
-- `rules/windows-vm-template.yaml` → `skills/check-vm-config/SKILL.md`
-- `rules/linux-vm-template.yaml` → `skills/check-vm-config/SKILL.md`
+- `rules/windows-vm-example.yaml` → `skills/check-vm-config/SKILL.md`
+- `rules/linux-vm-example.yaml` → `skills/check-vm-config/SKILL.md`
 - `rules/host-tuning.md` → `skills/ocp-analysis/SKILL.md`
 - `rules/host-tuning.md` → `skills/ocp-analysis/SKILL.md`
 - New methodology file → all relevant skills that cover that topic
