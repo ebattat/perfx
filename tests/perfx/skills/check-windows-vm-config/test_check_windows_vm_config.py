@@ -191,7 +191,7 @@ class TestHelpers:
         f.write_text(WINDOWS_YAML_PASS)
         assert mod._detect_os(str(f)) == "windows"
 
-    def test_detect_os_linux(self, tmp_path):
+    def test_detect_os_unknown_when_no_indicators(self, tmp_path):
         f = tmp_path / "vm.yaml"
-        f.write_text(WINDOWS_YAML_ISSUES)  # no hyperv features → linux
-        assert mod._detect_os(str(f)) == "linux"
+        f.write_text(WINDOWS_YAML_ISSUES)  # no hyperv features, no labels → unknown
+        assert mod._detect_os(str(f)) == "unknown"
