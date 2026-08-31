@@ -1,45 +1,144 @@
 # Windows VM Required Configuration Checks
 # Source: https://developers.redhat.com/blog/2026/05/06/best-practice-configuration-and-tuning-linux-and-windows-vms#vm_definition
-# Each key defines what the check script validates.
+# Adding a new check: add one entry to the checks: list below — no Python change needed.
 
-devices:
-  autoattachMemBalloon: false
-  blockMultiQueue: true
-  tpm: required                    # tpm section must be present
-  networkInterfaceMultiqueue: true
-  disk:
-    root_bus: virtio               # root disk (bootOrder: 1) must use virtio (or scsi for OCP 4.22)
-    bootOrder: required            # root disk must have bootOrder: 1
+checks:
+  # ── devices ──────────────────────────────────────────────────────────────
+  - path: devices.autoattachMemBalloon
+    expected: false
+    severity: FAIL
+    label: autoattachMemBalloon
+    section: devices
+    fix: true
+    message: "must be false for MSSQL"
 
-clock:
-  timer:
-    hpet:
-      present: false
-    hyperv: required
-    pit:
-      tickPolicy: delay
-    rtc:
-      tickPolicy: catchup
-  utc: required
+  - path: devices.blockMultiQueue
+    expected: true
+    severity: FAIL
+    label: blockMultiQueue
+    section: devices
+    fix: true
+    message: "enables multi-queue for block devices"
 
-firmware:
-  bootloader:
-    efi:
-      secureBoot: false
+  - path: devices.tpm
+    expected: "~present~"
+    severity: FAIL
+    label: tpm
+    section: devices
 
-ioThreads:
-  supplementalPoolThreadCount: required   # must be set; value depends on vCPU count
-ioThreadsPolicy: supplementalPool
+  - path: devices.networkInterfaceMultiqueue
+    expected: true
+    severity: FAIL
+    label: networkInterfaceMultiqueue
+    section: devices
+    fix: true
+    message: "enables multi-queue for network"
 
-machine:
-  type: q35                        # minimum; pc-q35-rhel9.8.0+ required for OCP 4.22 coalescing
+  # ── clock ─────────────────────────────────────────────────────────────────
+  - path: clock.timer.hpet
+    expected: "~present~"
+    severity: FAIL
+    label: clock.hpet
+    section: clock
+    fix: true
 
-cpu:
-  sockets: 1                       # set all vCPUs in cores, not sockets — sockets: 1, threads: 1
-  threads: 1
+  - path: clock.timer.hpet.present
+    expected: false
+    severity: FAIL
+    label: clock.hpet.present
+    section: clock
+    requires: clock.timer.hpet
+    fix: true
+    message: "HPET must be disabled"
 
-evictionStrategy: LiveMigrate      # optional — WARNING if missing; ensures VM is live migrated on node drain
+  - path: clock.timer.hyperv
+    expected: "~present~"
+    severity: FAIL
+    label: clock.hyperv
+    section: clock
+    fix: true
+    message: "hypervclock must be present"
 
+  - path: clock.timer.pit
+    expected: "~present~"
+    severity: FAIL
+    label: clock.pit
+    section: clock
+    fix: true
+
+  - path: clock.timer.pit.tickPolicy
+    expected: delay
+    severity: FAIL
+    label: clock.pit.tickPolicy
+    section: clock
+    requires: clock.timer.pit
+    fix: true
+    message: "PIT timer policy"
+
+  - path: clock.timer.rtc
+    expected: "~present~"
+    severity: FAIL
+    label: clock.rtc
+    section: clock
+    fix: true
+
+  - path: clock.timer.rtc.tickPolicy
+    expected: catchup
+    severity: FAIL
+    label: clock.rtc.tickPolicy
+    section: clock
+    requires: clock.timer.rtc
+    fix: true
+    message: "RTC timer policy"
+
+  # ── firmware ──────────────────────────────────────────────────────────────
+  - path: firmware.bootloader.efi
+    expected: "~present~"
+    severity: WARN
+    label: firmware.efi
+    section: firmware
+
+  # ── I/O threads ───────────────────────────────────────────────────────────
+  - path: ioThreadsPolicy
+    expected: supplementalPool
+    severity: FAIL
+    label: ioThreadsPolicy
+    section: ioThreads
+    fix: true
+    message: "offloads IO from vCPU threads"
+
+  # ── machine type ──────────────────────────────────────────────────────────
+  - path: machine.type
+    expected: "~gte:pc-q35-rhel9.8.0~"
+    severity: WARN
+    label: machine.type
+    section: machine
+
+  # ── cpu topology ─────────────────────────────────────────────────────────
+  - path: cpu.sockets
+    expected: "~lte:1~"
+    severity: WARN
+    label: cpu.sockets
+    section: cpu
+    message: "use cores instead of sockets — set sockets: 1, threads: 1"
+
+  # ── eviction strategy ─────────────────────────────────────────────────────
+  - path: "spec:evictionStrategy"
+    expected: LiveMigrate
+    severity: WARN
+    label: evictionStrategy
+    section: spec
+    fix: true
+    message: "ensures VM is live migrated on node drain"
+
+# Special checks that need custom code (arrays, calculations, nested validation)
+special_checks:
+  hyperv_enlightenments: true   # validates features.hyperv.* keys with special logic
+  nic_model: true               # checks all interfaces[].model != e1000/e1000e/rtl8139
+  disk_bus: true                # checks all disks[].disk.bus is virtio or scsi
+  io_threads_count: true        # supplementalPoolThreadCount calculated from vCPU count
+
+# Hyperv enlightenments config — used by special_checks.hyperv_enlightenments
 features:
   hyperv:
     ipi: required
