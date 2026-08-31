@@ -434,6 +434,18 @@ def check_vm_config_from_content(yaml_content: str, os_type: str = None) -> dict
             capture_output=True, text=True, timeout=30
         )
         output = result.stdout if result.stdout else result.stderr
+        # strip the corrected YAML block — it's already saved to the log file
+        # and returning it inflates the tool result with hundreds of lines
+        if "CORRECTED VM YAML" in output:
+            output = output[:output.index("CORRECTED VM YAML")].rstrip()
+            output += "\n\n(Corrected YAML saved to log file — see 'Report saved to:' line below)"
+        # preserve the log path line from the end of stdout
+        log_line = next(
+            (ln for ln in (result.stdout or "").splitlines() if "Report saved to:" in ln),
+            ""
+        )
+        if log_line and log_line not in output:
+            output += f"\n{log_line}"
         return {
             "severity": "CRITICAL" if "❌" in output else "PASS",
             "detected_os": detected,
