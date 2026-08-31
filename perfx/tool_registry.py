@@ -130,7 +130,8 @@ TOOL_DECLARATIONS = [
                 description=(
                     "PREFERRED: Check a VM YAML configuration from a local file path. "
                     "Use this whenever the user provides a file path — do NOT read the file first. "
-                    "Auto-detects Windows vs Linux and runs the appropriate check skill."
+                    "IMPORTANT: Before calling, always ask the user 'Is this a Windows or Linux VM?' "
+                    "and pass their answer as os_type. Do not rely on auto-detection alone."
                 ),
                 parameters=gtypes.Schema(
                     type=gtypes.Type.OBJECT,
@@ -395,7 +396,7 @@ ANTHROPIC_TOOLS = [
      "description": "Read rules and methodology files from the PerfX knowledge base. Use this whenever the user asks about performance issues, recommendations, or investigation steps — ALWAYS call this first before answering from memory. Topics: 'io', 'io-degradation', 'memory', 'network', 'vmexit', 'cpu', 'windows-vm', 'linux-vm'.",
      "input_schema": {"type": "object", "properties": {"topic": {"type": "string", "description": "Topic to search, e.g. 'io-degradation', 'memory', 'vmexit'"}}, "required": ["topic"]}},
     {"name": "check_vm_config_from_path",
-     "description": "PREFERRED: Check a VM YAML configuration from a local file path. Use this whenever the user provides a file path — do NOT read the file first. Auto-detects Windows vs Linux.",
+     "description": "PREFERRED: Check a VM YAML configuration from a local file path. Use this whenever the user provides a file path — do NOT read the file first. IMPORTANT: Before calling, always ask the user 'Is this a Windows or Linux VM?' and pass their answer as os_type.",
      "input_schema": {"type": "object", "properties": {
          "path": {"type": "string", "description": "Absolute path to the VM YAML file"},
          "os_type": {"type": "string", "description": "Override OS: 'windows' or 'linux'. Omit to auto-detect."}
