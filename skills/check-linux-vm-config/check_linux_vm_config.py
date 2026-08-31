@@ -248,7 +248,7 @@ def main():
     LOGS_DIR.mkdir(exist_ok=True)
     ts   = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     name = Path(args.vm_yaml).stem
-    out  = LOGS_DIR / f"linux_vm_config_audit_{name}_{ts}.log"
+    out  = LOGS_DIR / f"perfx_{ts}.log"
     out.write_text(report)
     print(f"\nReport saved to: {out}")
 
