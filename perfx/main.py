@@ -1,6 +1,8 @@
+import subprocess
 import sys
 import os
 import argparse
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
@@ -15,53 +17,10 @@ log = get_logger("main")
 REPORTS_DIR = Path(os.environ.get("PERFX_LOGS_DIR", Path(__file__).parent.parent / "logs"))
 
 
-def _save_report(content: str, fmt: str, output_dir: str = None):
-    report_dir = Path(output_dir) if output_dir else REPORTS_DIR
-    report_dir.mkdir(exist_ok=True)
-    ext = "md" if fmt == "markdown" else "log"
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    path = report_dir / f"perfx_report_{timestamp}.{ext}"
-    path.write_text(content, encoding="utf-8")
-    log.info("Report saved to %s", path)
-    print(f"\nReport saved to: {path}")
-
-
-def _cmd_logs(args):
-    from perfx.analyzer import analyze
-    from perfx.skills.registry import SkillRegistry
-
-    if getattr(args, "list_skills", False):
-        registry = SkillRegistry()
-        print("Available skills:")
-        for skill in registry.list():
-            print(f"  {skill.name:15s} — {skill.description}")
-        return
-
-    source = args.logs
-    if not source:
-        log.error("provide a folder/file path with --logs")
-        sys.exit(1)
-
-    skill_names = [s.strip() for s in args.skill.split(",")] if args.skill else None
-    fmt = args.output or "summary"
-
-    log.info("Analyzing: %s", source)
-    report = analyze(source, skill_names=skill_names)
-
-    if fmt == "markdown":
-        content = report.to_markdown()
-    elif fmt == "text":
-        content = report.to_text()
-    else:
-        content = report.to_summary()
-
-    print(content)
-    _save_report(content, fmt, output_dir=getattr(args, "output_dir", None))
 
 
 def _cluster_available():
     """Return True if oc is available and logged into a cluster."""
-    import subprocess
     try:
         result = subprocess.run(
             ["oc", "whoami"], capture_output=True, text=True, timeout=5
@@ -73,10 +32,6 @@ def _cluster_available():
 
 def _collect_cluster_summary():
     """Run the ocp-analysis skill to print a full cluster summary including C1 tuned check."""
-    import subprocess
-    import tempfile
-    import os
-
     script = Path(__file__).parent.parent / "skills" / "ocp-analysis" / "analyze_ocp.py"
     if not script.exists():
         return
@@ -106,18 +61,10 @@ def main():
 
     parser = argparse.ArgumentParser(description="PerfX — performance knowledge base agent")
     parser.add_argument("--model", "-m", choices=["gemini", "claude"], default=None)
-    parser.add_argument("--logs", metavar="PATH", help="Analyze log files (no agent required)")
-    parser.add_argument("--skill", "-s", help="Comma-separated skill names (default: all)")
-    parser.add_argument("--output", "-o", choices=["text", "markdown", "summary"], default="summary")
-    parser.add_argument("--output-dir", metavar="DIR", help="Directory to save report (default: logs/)")
     args = parser.parse_args()
 
     if args.model:
         os.environ["PERFBOT_MODEL"] = args.model
-
-    if args.logs:
-        _cmd_logs(args)
-        return
 
     model_name = os.environ.get("PERFBOT_MODEL", "claude").lower()
     print(f"PerfX Agent (powered by {model_name.capitalize()}). Type 'exit' or Ctrl-C to quit.")
