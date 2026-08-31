@@ -56,6 +56,17 @@ def _to_int(v, default=1):
         return default
 
 
+def _version_gte(actual, threshold):
+    """Compare version strings like 'pc-q35-rhel9.10.0' using integer tuple comparison."""
+    import re
+    def _parts(s):
+        return tuple(int(x) if x.isdigit() else x for x in re.split(r'(\d+)', s))
+    try:
+        return _parts(actual) >= _parts(threshold)
+    except TypeError:
+        return actual >= threshold
+
+
 # ── generic evaluator (data-driven checks from rules YAML) ───────────────────
 
 def _get_path(root, path):
@@ -100,7 +111,7 @@ def _eval_rule(domain, spec, rule):
         expected_str = f"≤{n}"
     elif isinstance(expected, str) and expected.startswith("~gte:"):
         threshold    = expected[5:-1]
-        ok           = bool(actual) and str(actual) >= threshold
+        ok           = bool(actual) and _version_gte(str(actual), threshold)
         actual_str   = str(actual) if actual is not None else "not set"
         expected_str = f"≥{threshold}"
     else:
