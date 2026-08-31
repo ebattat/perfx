@@ -55,10 +55,22 @@ def _to_int(v, default=1):
 
 
 def _detect_os(vm_path):
-    """Detect VM OS from YAML hyperv features — returns 'windows' or 'linux'."""
+    """Detect VM OS — returns 'windows', 'linux', or 'unknown'."""
     doc = _load(vm_path)
     domain = (doc.get("spec", {}).get("template", {}).get("spec", {}).get("domain", {}))
-    return "windows" if "hyperv" in domain.get("features", {}) else "linux"
+    if domain.get("features", {}).get("hyperv"):
+        return "windows"
+    preference = (doc.get("spec") or {}).get("preference", {}).get("name", "")
+    if "windows" in preference.lower():
+        return "windows"
+    os_label = ((doc.get("spec") or {}).get("template", {})
+                .get("metadata", {}).get("annotations", {})
+                .get("vm.kubevirt.io/os", ""))
+    if os_label and "windows" in os_label.lower():
+        return "windows"
+    if os_label and os_label not in ("", "__template__"):
+        return "linux"
+    return "unknown"
 
 
 def _generate_corrected_yaml(vm_path, findings):
@@ -591,6 +603,7 @@ def main():
     parser.add_argument("--vm", help="VM name to fetch from cluster")
     parser.add_argument("--namespace", "-n", help="Namespace of the VM")
     parser.add_argument("--list", action="store_true", help="List all running VMs")
+    parser.add_argument("--os", choices=["windows", "linux"], help="Override OS detection")
     args = parser.parse_args()
 
     if args.list:
@@ -612,11 +625,13 @@ def main():
         sys.exit(1)
 
     try:
-        detected_os = _detect_os(vm_path)
-        if detected_os != "windows":
-            print(f"ERROR: VM detected as '{detected_os}' OS — use check_linux_vm_config.py for Linux VMs.",
+        detected_os = args.os or _detect_os(vm_path)
+        if detected_os == "linux":
+            print("ERROR: VM detected as Linux — use check_linux_vm_config.py for Linux VMs.",
                   file=sys.stderr)
             sys.exit(1)
+        if detected_os == "unknown":
+            print("Note: OS not detected from YAML — running Windows check (use --os to override).")
 
         report = check(vm_path)
         print(report)
