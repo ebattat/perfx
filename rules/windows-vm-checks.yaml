@@ -1,0 +1,52 @@
+# Windows VM Required Configuration Checks
+# Source: https://developers.redhat.com/blog/2026/05/06/best-practice-configuration-and-tuning-linux-and-windows-vms#vm_definition
+# Each key defines what the check script validates.
+
+devices:
+  autoattachMemBalloon: false
+  blockMultiQueue: true
+  tpm: required                    # tpm section must be present
+  networkInterfaceMultiqueue: true
+  disk:
+    root_bus: virtio               # root disk (bootOrder: 1) must use virtio (or scsi for OCP 4.22)
+    bootOrder: required            # root disk must have bootOrder: 1
+
+clock:
+  timer:
+    hpet:
+      present: false
+    hyperv: required
+    pit:
+      tickPolicy: delay
+    rtc:
+      tickPolicy: catchup
+  utc: required
+
+firmware:
+  bootloader:
+    efi:
+      secureBoot: false
+
+ioThreads:
+  supplementalPoolThreadCount: required   # must be set; value depends on vCPU count
+ioThreadsPolicy: supplementalPool
+
+machine:
+  type: q35                        # minimum; pc-q35-rhel9.8.0+ required for OCP 4.22 coalescing
+
+features:
+  hyperv:
+    ipi: required
+    synic: required
+    synictimer:
+      direct: required
+    spinlocks:
+      spinlocks: 8191
+    reenlightenment: required
+    reset: required
+    relaxed: required
+    vpindex: required
+    runtime: required
+    tlbflush: required
+    frequencies: required
+    vapic: required

@@ -16,8 +16,8 @@ and flag missing or incorrect settings that cause performance issues.
 
 Before auditing, read and apply these rules:
 
-- `rules/windows-vm-template.yaml` — recommended Windows VM configuration (reference template)
-- `rules/linux-vm-template.yaml` — recommended Linux VM configuration (reference template)
+- `rules/windows-vm-example.yaml` — recommended Windows VM configuration (reference template)
+- `rules/linux-vm-example.yaml` — recommended Linux VM configuration (reference template)
 - `rules/io-degradation.md` — IO degradation investigation steps, especially:
   - Step 2: ioThreads configuration (supplementalPool, 8 threads)
   - Step 4: hyperv enlightenments and clock timer settings
@@ -29,7 +29,7 @@ Before auditing, read and apply these rules:
 
 ## Steps
 
-1. Read `rules/windows-vm-template.yaml` or `rules/linux-vm-template.yaml` as the reference
+1. Read `rules/windows-vm-example.yaml` or `rules/linux-vm-example.yaml` as the reference
 2. Download the user-provided VM YAML file
 3. For Windows VMs: Run `python3 /workspace/skills/check-vm-config/check_vm_config.py <file>`
 4. For Linux VMs: Use the linux check function

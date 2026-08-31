@@ -14,6 +14,12 @@
 # Without this guest-side step, Windows may still trigger IO_INSTRUCTION VM exits
 # even after the VM config is corrected.
 # Reference: rules/io-degradation.md Step 5
+#
+# NOTE: VBS (Virtualization Based Security) must be DISABLED inside the Windows guest
+# for all performance-critical workloads. Although nested virtualization may be enabled
+# at the host/VM level, VBS adds HVCI overhead that significantly impacts performance.
+# To disable VBS inside the guest: run msinfo32 and verify VBS is Off, or disable via
+# Group Policy: Computer Configuration → Administrative Templates → System → Device Guard
 
 apiVersion: kubevirt.io/v1
 kind: VirtualMachine
@@ -21,7 +27,7 @@ spec:
   # Always apply a VirtualMachineClusterPreference — it applies critical optimizations automatically
   # List available: oc get VirtualMachineClusterPreference
   preference:
-    name: windows.2k25.virtio       # use the appropriate preference for the Windows version
+    name: <set>                     # List available: oc get VirtualMachineClusterPreference
   template:
     spec:
       domain:
@@ -82,7 +88,7 @@ spec:
             efi:
               secureBoot: false
         ioThreads:
-          supplementalPoolThreadCount: 8    # IO threads for MSSQL workloads
+          supplementalPoolThreadCount: <set>  # depends on vCPU count — start at 4, scale up for fast storage
         ioThreadsPolicy: supplementalPool   # must be supplementalPool
         machine:
           type: q35

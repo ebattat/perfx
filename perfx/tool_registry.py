@@ -1,5 +1,5 @@
 from google.genai import types as gtypes
-from perfx.vm_config_tool import check_vm_config, check_linux_vm_config, detect_os
+from perfx.vm_config_tool import check_vm_config, check_linux_vm_config, detect_os, check_vm_config_from_content
 from perfx.knowledge_tool import read_rules, read_file
 from perfx.cluster_tool import list_cluster_vms, fetch_cluster_vm_yaml
 from perfx.gdrive.gdrive import list_gdrive_folder, read_gdrive, search_gdrive
@@ -31,6 +31,7 @@ DISPATCH = {
     "check_vm_config": check_vm_config,
     "check_linux_vm_config": check_linux_vm_config,
     "detect_os": detect_os,
+    "check_vm_config_from_content": check_vm_config_from_content,
     "github_get_issue": github_get_issue,
     "github_list_issues": github_list_issues,
     "github_search_issues": github_search_issues,
@@ -121,6 +122,22 @@ TOOL_DECLARATIONS = [
                                                description="Topic to search for, e.g. 'io-degradation', 'memory', 'vmexit'"),
                     },
                     required=["topic"],
+                ),
+            ),
+            gtypes.FunctionDeclaration(
+                name="check_vm_config_from_content",
+                description=(
+                    "Check a VM YAML configuration from content string (not a file path). "
+                    "Use this when the YAML content comes from Google Drive or another source. "
+                    "Auto-detects Windows vs Linux and runs the appropriate check."
+                ),
+                parameters=gtypes.Schema(
+                    type=gtypes.Type.OBJECT,
+                    properties={
+                        "yaml_content": gtypes.Schema(type=gtypes.Type.STRING,
+                                                       description="The full YAML content string"),
+                    },
+                    required=["yaml_content"],
                 ),
             ),
             # ── OCP cluster tools ────────────────────────────────────────────
@@ -358,6 +375,12 @@ ANTHROPIC_TOOLS = [
     {"name": "read_rules",
      "description": "Read rules and methodology files from the PerfX knowledge base. Use this whenever the user asks about performance issues, recommendations, or investigation steps — ALWAYS call this first before answering from memory. Topics: 'io', 'io-degradation', 'memory', 'network', 'vmexit', 'cpu', 'windows-vm', 'linux-vm'.",
      "input_schema": {"type": "object", "properties": {"topic": {"type": "string", "description": "Topic to search, e.g. 'io-degradation', 'memory', 'vmexit'"}}, "required": ["topic"]}},
+    {"name": "check_vm_config_from_content",
+     "description": "Check a VM YAML configuration from content string. Use when YAML content comes from Google Drive or another source. Always confirm os_type with the user before calling.",
+     "input_schema": {"type": "object", "properties": {
+         "yaml_content": {"type": "string", "description": "The full YAML content string"},
+         "os_type": {"type": "string", "description": "OS type: 'windows' or 'linux' — confirmed by user"}
+     }, "required": ["yaml_content"]}},
     {"name": "list_cluster_vms",
      "description": "List all VMs running on the connected OCP cluster. Call this when the user asks to check a VM YAML and has not provided a file path.",
      "input_schema": {"type": "object", "properties": {}}},

@@ -568,10 +568,10 @@ class TestDetectOs:
         assert detect_os(str(f)) == "linux"
 
     def test_windows_template_detected(self):
-        assert detect_os("rules/windows-vm-template.yaml") == "windows"
+        assert detect_os("rules/windows-vm-example.yaml") == "windows"
 
     def test_linux_template_detected(self):
-        assert detect_os("rules/linux-vm-template.yaml") == "linux"
+        assert detect_os("rules/linux-vm-example.yaml") == "linux"
 
 
 class TestSaveReport:
