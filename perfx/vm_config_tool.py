@@ -412,25 +412,27 @@ def check_linux_vm_config(path: str) -> dict:
     }
 
 
-def check_vm_config_from_content(yaml_content: str, os_type: str = None) -> dict:
-    """Check VM config from YAML content string using the check-vm-config skill script.
+def check_vm_config_from_path(path: str, os_type: str = None) -> dict:
+    """Check VM config from a local file path.
 
-    os_type: 'windows' or 'linux'. If not provided, auto-detects from content.
-    Always confirm os_type with the user before calling this function.
+    Preferred over check_vm_config_from_content when a file path is available —
+    avoids passing the full YAML as a string argument.
+    os_type: 'windows' or 'linux'. Auto-detects if not provided.
     """
+    return _run_vm_config_check(path, os_type, cleanup=False)
+
+
+def _run_vm_config_check(path: str, os_type: str = None, cleanup: bool = False) -> dict:
     import subprocess
-    tmp = tempfile.NamedTemporaryFile(suffix=".yaml", mode="w", delete=False)
-    tmp.write(yaml_content)
-    tmp.close()
     try:
-        detected = detect_os(tmp.name)
+        detected = detect_os(path)
         resolved = os_type if os_type in ("windows", "linux") else detected
         if resolved == "linux":
             skill_script = Path(__file__).parent.parent / "skills" / "check-linux-vm-config" / "check_linux_vm_config.py"
         else:
             skill_script = Path(__file__).parent.parent / "skills" / "check-windows-vm-config" / "check_windows_vm_config.py"
         result = subprocess.run(
-            ["python3", str(skill_script), tmp.name],
+            ["python3", str(skill_script), path],
             capture_output=True, text=True, timeout=30
         )
         full_output = result.stdout if result.stdout else result.stderr
@@ -483,4 +485,17 @@ def check_vm_config_from_content(yaml_content: str, os_type: str = None) -> dict
             "summary": f"VM config checked as {resolved}. Full report: {log_line}",
         }
     finally:
-        Path(tmp.name).unlink(missing_ok=True)
+        if cleanup:
+            Path(path).unlink(missing_ok=True)
+
+
+def check_vm_config_from_content(yaml_content: str, os_type: str = None) -> dict:
+    """Check VM config from YAML content string.
+
+    Prefer check_vm_config_from_path when a file path is available.
+    os_type: 'windows' or 'linux'. Auto-detects if not provided.
+    """
+    tmp = tempfile.NamedTemporaryFile(suffix=".yaml", mode="w", delete=False)
+    tmp.write(yaml_content)
+    tmp.close()
+    return _run_vm_config_check(tmp.name, os_type, cleanup=True)
