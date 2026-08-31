@@ -482,15 +482,16 @@ def check(vm_path):
     lines.append("       oc apply -f skills/ocp-analysis/tuned-c1.yaml")
     lines.append("     Verify: oc get profile.tuned.openshift.io -n openshift-cluster-node-tuning-operator")
 
+    corrected_yaml = None
     if any(s == "FAIL" for s, *_ in findings):
+        corrected_yaml = _generate_corrected_yaml(vm_path, findings)
         lines.append("")
         lines.append("─" * 65)
-        lines.append("CORRECTED VM YAML")
+        lines.append("CORRECTED VM YAML (also saved to a separate .yaml file)")
         lines.append("─" * 65)
-        corrected = _generate_corrected_yaml(vm_path, findings)
-        lines.append(corrected)
+        lines.append(corrected_yaml)
 
-    return "\n".join(lines)
+    return "\n".join(lines), corrected_yaml
 
 
 def _list_vms():
@@ -544,17 +545,26 @@ def main():
         from perfx.vm_config_tool import detect_os
         detect_os(vm_path)
 
-        report = check(vm_path)
+        report, corrected_yaml = check(vm_path)
         print(report)
 
         LOGS_DIR.mkdir(exist_ok=True)
         ts   = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         name = args.vm or Path(vm_path).stem
-        out  = LOGS_DIR / f"vm_config_audit_{name}_{ts}.log"
-        out.write_text(report)
-        print(f"\n{'─' * 65}")
-        print(f"CORRECTED VM YAML saved to: {out}")
-        print(f"Review and apply with: oc apply -f {out}")
+
+        # save full audit report
+        log_out = LOGS_DIR / f"vm_config_audit_{name}_{ts}.log"
+        log_out.write_text(report)
+
+        # save corrected YAML to a separate file only when changes were made
+        if corrected_yaml:
+            yaml_out = LOGS_DIR / f"vm_config_corrected_{name}_{ts}.yaml"
+            yaml_out.write_text(corrected_yaml)
+            print(f"\n{'─' * 65}")
+            print(f"CORRECTED VM YAML saved to: {yaml_out}")
+            print(f"Review and apply with: oc apply -f {yaml_out}")
+        else:
+            print(f"\nReport saved to: {log_out}")
     finally:
         if fetched_tmp:
             Path(fetched_tmp).unlink(missing_ok=True)
