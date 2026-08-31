@@ -329,7 +329,7 @@ def main():
     ts   = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     name = Path(args.vm_yaml).stem
     out  = LOGS_DIR / f"perfx_linux_{ts}.log"
-    out.write_text(report)
+    out.write_text(report, encoding="utf-8")
     print(f"\nReport saved to: {out}")
 
 

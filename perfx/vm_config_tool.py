@@ -1,3 +1,4 @@
+import os
 import re
 import tempfile
 from datetime import datetime
@@ -438,7 +439,8 @@ def _run_vm_config_check(path: str, os_type: str = None, cleanup: bool = False) 
             skill_script = Path(__file__).parent.parent / "skills" / "check-windows-vm-config" / "check_windows_vm_config.py"
         result = subprocess.run(
             ["python3", str(skill_script), path],
-            capture_output=True, text=True, timeout=30
+            capture_output=True, text=True, encoding="utf-8", timeout=30,
+            env={**os.environ, "PYTHONUTF8": "1"}
         )
         full_output = result.stdout if result.stdout else result.stderr
         lines = full_output.splitlines()
