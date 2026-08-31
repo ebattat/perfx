@@ -1,17 +1,39 @@
 # Linux VM Required Configuration Checks
 # Source: https://developers.redhat.com/blog/2026/05/06/best-practice-configuration-and-tuning-linux-and-windows-vms#vm_definition
 # Reference: https://developers.redhat.com/blog/2025/06/23/feature-introduction-multiple-iothreads-openshift-virtualization
+# Adding a new check: add one entry to the checks: list below — no Python change needed.
 
-devices:
-  disk:
-    bus: virtio                         # virtio = best performance, NEVER use sata
+checks:
+  # ── I/O threads ───────────────────────────────────────────────────────────
+  - path: ioThreadsPolicy
+    expected: supplementalPool
+    severity: FAIL
+    label: ioThreadsPolicy
+    section: ioThreads
+    fix: true
+    message: "offloads IO from vCPU threads"
 
-cpu:
-  sockets: 1                            # set all vCPUs in cores, not sockets — sockets: 1, threads: 1
-  threads: 1
+  # ── cpu topology ─────────────────────────────────────────────────────────
+  - path: cpu.sockets
+    expected: "~lte:1~"
+    severity: WARN
+    label: cpu.sockets
+    section: cpu
+    message: "use cores instead of sockets — set sockets: 1, threads: 1"
 
-evictionStrategy: LiveMigrate           # optional — WARNING if missing; ensures VM is live migrated on node drain
+  # ── eviction strategy ─────────────────────────────────────────────────────
+  - path: "spec:evictionStrategy"
+    expected: LiveMigrate
+    severity: WARN
+    label: evictionStrategy
+    section: spec
+    fix: true
+    message: "ensures VM is live migrated on node drain"
 
-ioThreadsPolicy: supplementalPool       # OCP 4.19+ — offloads IO from vCPU threads
-ioThreads:
-  supplementalPoolThreadCount: required # must be set; value depends on vCPU count (start at 4)
+# Special checks that need custom code (arrays, calculations)
+special_checks:
+  disk_bus: true        # checks all disks[].disk.bus == virtio
+  nic_model: true       # checks all interfaces[].model != e1000/e1000e/rtl8139
+  io_threads_count: true  # supplementalPoolThreadCount calculated from vCPU count
+  block_multi_queue: false  # set to true to enable blockMultiQueue check for Linux
+  network_multiqueue: false  # set to true to enable networkInterfaceMultiqueue check for Linux

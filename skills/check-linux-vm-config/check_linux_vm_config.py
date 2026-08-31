@@ -2,6 +2,7 @@
 """
 Check Linux VM YAML configuration against rules/linux-vm-checks.yaml.
 Usage: python3 check_linux_vm_config.py <customer-vm.yaml>
+Add new checks by editing rules/linux-vm-checks.yaml — no Python change needed.
 """
 import os
 import sys
@@ -26,9 +27,8 @@ def _load(path):
         raw = f.read()
     raw = re.sub(r'\{%-?.*?-?%\}', '', raw)
     raw = re.sub(r'\{\{.*?\}\}', '"__template__"', raw)
-    # handle multi-document YAML — find the VirtualMachine document
     docs = list(yaml.safe_load_all(raw))
-    docs = [d for d in docs if d]  # filter None (empty docs)
+    docs = [d for d in docs if d]
     for doc in docs:
         if doc.get("kind") == "VirtualMachine":
             return doc
@@ -56,65 +56,164 @@ def _to_int(v, default=1):
         return default
 
 
+# ── generic evaluator (data-driven checks from rules YAML) ───────────────────
+
+def _get_path(root, path):
+    """Traverse dot-separated path in a nested dict; return None if missing."""
+    value = root
+    for key in path.split("."):
+        if not isinstance(value, dict):
+            return None
+        value = value.get(key)
+    return value
+
+
+def _eval_rule(domain, spec, rule):
+    """Evaluate one rule. Returns (ok, actual_val, actual_str, expected_str, status)."""
+    path     = rule["path"]
+    expected = rule["expected"]
+    severity = rule.get("severity", "FAIL")
+    msg      = rule.get("message", "")
+
+    root       = spec if path.startswith("spec:") else domain
+    clean_path = path[5:] if path.startswith("spec:") else path
+    actual     = _get_path(root, clean_path)
+
+    if expected == "~present~":
+        ok           = actual is not None
+        actual_str   = "present" if ok else "missing"
+        expected_str = "required"
+    elif isinstance(expected, str) and expected.startswith("~lte:"):
+        n            = _to_int(expected[5:-1], 1)
+        ok           = actual is None or _to_int(actual, n + 1) <= n
+        actual_str   = str(actual) if actual is not None else "not set (default ≤)"
+        expected_str = f"≤{n}"
+    elif isinstance(expected, str) and expected.startswith("~gte:"):
+        threshold    = expected[5:-1]
+        ok           = bool(actual) and str(actual) >= threshold
+        actual_str   = str(actual) if actual is not None else "not set"
+        expected_str = f"≥{threshold}"
+    else:
+        ok           = actual == expected
+        actual_str   = str(actual).lower() if isinstance(actual, bool) else (str(actual) if actual is not None else "not set")
+        expected_str = str(expected).lower() if isinstance(expected, bool) else str(expected)
+
+    if ok:
+        status = "✅ OK"
+    elif severity == "FAIL":
+        status = "❌ MISSING" if actual is None else "❌ WRONG"
+    else:
+        status = f"⚠️ {msg}" if msg else "⚠️ CHECK"
+
+    return ok, actual, actual_str, expected_str, status
+
+
+def _eval_checks(domain, spec, checks_list):
+    """Run all generic rules. Returns (findings, passes, table_rows)."""
+    findings   = []
+    passes     = []
+    table_rows = []
+
+    for rule in checks_list:
+        ok, actual, actual_str, expected_str, status = _eval_rule(domain, spec, rule)
+        label    = rule.get("label", rule["path"].split(".")[-1])
+        section  = rule.get("section", rule["path"].split(".")[-1])
+        msg      = rule.get("message", "")
+        severity = rule.get("severity", "FAIL")
+
+        table_rows.append((label, actual_str, expected_str, status))
+
+        if ok:
+            passes.append((section, label))
+        elif severity == "FAIL":
+            detail = f"={actual!r} (want {rule['expected']!r})" if actual is not None else f"missing (want {rule['expected']!r})"
+            findings.append(("FAIL", section, label, detail))
+        else:
+            detail = f"={actual!r} — {msg}" if msg else f"={actual!r} (want {rule['expected']!r})"
+            findings.append(("WARN", section, label, detail))
+
+    return findings, passes, table_rows
+
+
+# ── corrected YAML generation ─────────────────────────────────────────────────
+
 def _generate_corrected_yaml(vm_path, findings):
-    """Generate corrected VM YAML with Linux best-practice fixes applied."""
-    import yaml as _yaml
-    doc     = _load(vm_path)
-    domain  = _domain(doc)
-    checks  = _load_checks()
-    changes = []
+    """Generate corrected VM YAML: auto-applies fix:true rules + special fixes."""
+    doc    = _load(vm_path)
+    domain = _domain(doc)
+    spec   = (doc.get("spec") or {}).get("template", {}).setdefault("spec", {})
+    rules  = _load_checks()
+    changes  = []
+    comments = {}
 
-    actionable = {(section, key) for sev, section, key, _ in findings}
+    actionable = {(sec, key) for _, sec, key, _ in findings}
 
-    # ioThreads
-    cpu    = domain.get("cpu") or {}
-    vcpus  = _to_int(cpu.get("cores", 1), 1) * _to_int(cpu.get("sockets", 1), 1)
-    rec_threads = max(4, min(vcpus // 4, 16)) if vcpus > 1 else 4
-    if ("ioThreads", "ioThreadsPolicy") in actionable or ("ioThreads", "supplementalPoolThreadCount") in actionable:
+    # ── auto-fix simple rules with fix: true ──────────────────────────────────
+    for rule in rules.get("checks", []):
+        if not rule.get("fix"):
+            continue
+        label    = rule.get("label", rule["path"].split(".")[-1])
+        section  = rule.get("section", rule["path"].split(".")[-1])
+        expected = rule["expected"]
+
+        if (section, label) not in actionable:
+            continue
+        if isinstance(expected, str) and expected.startswith("~"):
+            continue
+
+        path       = rule["path"]
+        root       = spec if path.startswith("spec:") else domain
+        clean_path = path[5:] if path.startswith("spec:") else path
+        keys       = clean_path.split(".")
+        target     = root
+        for key in keys[:-1]:
+            if not isinstance(target.get(key), dict):
+                target[key] = {}
+            target = target[key]
+        target[keys[-1]] = expected
+        changes.append(label)
+        if rule.get("message"):
+            yaml_val = str(expected).lower() if isinstance(expected, bool) else str(expected)
+            comments[f"{keys[-1]}: {yaml_val}"] = f"# ADDED: {rule['message']}"
+
+    # ── ioThreads count fix (calculated) ──────────────────────────────────────
+    if ("ioThreads", "supplementalPoolThreadCount") in actionable:
+        cpu   = domain.get("cpu") or {}
+        vcpus = _to_int(cpu.get("cores", 1), 1) * _to_int(cpu.get("sockets", 1), 1)
+        rec   = max(4, min(vcpus // 4, 16)) if vcpus > 1 else 4
         domain["ioThreadsPolicy"] = "supplementalPool"
-        domain["ioThreads"] = {"supplementalPoolThreadCount": rec_threads}
-        changes.append("ioThreads")
+        domain["ioThreads"]       = {"supplementalPoolThreadCount": rec}
+        if "ioThreadsPolicy" not in changes:
+            changes.append("ioThreads")
+        comments["supplementalPoolThreadCount:"] = f"# ADDED: {rec} threads for {vcpus} vCPUs"
 
-    # devices
-    devices = domain.setdefault("devices", {})
+    # ── blockMultiQueue fix (special) ─────────────────────────────────────────
     if ("devices", "blockMultiQueue") in actionable:
-        devices["blockMultiQueue"] = True
+        domain.setdefault("devices", {})["blockMultiQueue"] = True
         changes.append("blockMultiQueue")
+        comments["blockMultiQueue: true"] = "# ADDED: enables multi-queue for block devices"
+
+    # ── networkInterfaceMultiqueue fix (special) ──────────────────────────────
     if ("devices", "networkInterfaceMultiqueue") in actionable:
-        devices["networkInterfaceMultiqueue"] = True
+        domain.setdefault("devices", {})["networkInterfaceMultiqueue"] = True
         changes.append("networkInterfaceMultiqueue")
+        comments["networkInterfaceMultiqueue: true"] = "# ADDED: enables multi-queue for network"
 
-    # evictionStrategy (fix for both FAIL and WARN)
-    spec = (doc.get("spec") or {}).get("template", {}).setdefault("spec", {})
-    if ("spec", "evictionStrategy") in actionable:
-        spec["evictionStrategy"] = "LiveMigrate"
-        changes.append("evictionStrategy")
-
-    # clean kubernetes metadata
+    # ── clean kubernetes metadata ─────────────────────────────────────────────
     meta = doc.get("metadata", {})
     for field in ["managedFields", "resourceVersion", "uid", "creationTimestamp",
                   "generation", "finalizers", "annotations"]:
         meta.pop(field, None)
     doc.pop("status", None)
 
-    raw = _yaml.dump(doc, default_flow_style=False, sort_keys=False).rstrip()
-
-    comments = {}
-    if "ioThreads" in changes:
-        comments["ioThreadsPolicy: supplementalPool"] = "# ADDED: offloads IO from vCPU threads"
-        comments["supplementalPoolThreadCount:"] = f"# ADDED: {rec_threads} threads for {vcpus} vCPUs"
-    if "blockMultiQueue" in changes:
-        comments["blockMultiQueue: true"] = "# ADDED: enables multi-queue for block devices"
-    if "networkInterfaceMultiqueue" in changes:
-        comments["networkInterfaceMultiqueue: true"] = "# ADDED: enables multi-queue for network"
-    if "evictionStrategy" in changes:
-        comments["evictionStrategy: LiveMigrate"] = "# ADDED: live migrate on node drain"
-
+    raw = yaml.dump(doc, default_flow_style=False, sort_keys=False).rstrip()
     annotated = []
     for line in raw.splitlines():
         stripped = line.strip()
-        comment = next((v for k, v in comments.items()
-                        if stripped == k or stripped.startswith(k + " ") or stripped.startswith(k + ":")), None)
+        comment  = next((v for k, v in comments.items()
+                         if stripped == k or stripped.startswith(k + " ")
+                         or stripped.startswith(k + ":") or stripped == k + ":"
+                         or (": " in k and stripped == k)), None)
         if comment and not stripped.startswith("#"):
             line = f"{line}  {comment}"
         annotated.append(line)
@@ -130,17 +229,15 @@ def check(vm_path):
     doc     = _load(vm_path)
     domain  = _domain(doc)
     vm_name = doc.get("metadata", {}).get("name", Path(vm_path).stem)
-    checks  = _load_checks()
+    rules   = _load_checks()
+    spec    = (doc.get("spec") or {}).get("template", {}).get("spec", {})
 
-    findings = []
-    passes   = []
+    # ── generic data-driven checks ────────────────────────────────────────────
+    findings, passes, gen_rows = _eval_checks(domain, spec, rules.get("checks", []))
 
-    devices   = domain.get("devices") or {}
-    cpu       = domain.get("cpu") or {}
-    io_policy = domain.get("ioThreadsPolicy")
-    io_count  = (domain.get("ioThreads") or {}).get("supplementalPoolThreadCount")
-    disks     = devices.get("disks") or []
-    interfaces = devices.get("interfaces") or []
+    special = rules.get("special_checks", {})
+    devices  = domain.get("devices") or {}
+    cpu      = domain.get("cpu") or {}
 
     def _fail(section, key, detail):
         findings.append(("FAIL", section, key, detail))
@@ -151,83 +248,60 @@ def check(vm_path):
     def _ok(section, key):
         passes.append((section, key))
 
-    dev_rules = checks.get("devices", {})
-
-    # blockMultiQueue
-    bmq = devices.get("blockMultiQueue")
-    exp = dev_rules.get("blockMultiQueue")
-    if exp is not None:
-        if bmq != exp:
-            _fail("devices", "blockMultiQueue", f"={bmq!r} (want {exp!r})")
+    # ── blockMultiQueue (special: data-driven but not in default Linux rules) ─
+    if special.get("block_multi_queue"):
+        bmq = devices.get("blockMultiQueue")
+        if bmq is not True:
+            _fail("devices", "blockMultiQueue", f"={bmq!r} (want True)")
         else:
             _ok("devices", "blockMultiQueue")
 
-    # networkInterfaceMultiqueue
-    net_mq = devices.get("networkInterfaceMultiqueue")
-    exp = dev_rules.get("networkInterfaceMultiqueue")
-    if exp is not None:
-        if net_mq != exp:
-            _fail("devices", "networkInterfaceMultiqueue", f"={net_mq!r} (want {exp!r})")
+    # ── networkInterfaceMultiqueue (special) ──────────────────────────────────
+    if special.get("network_multiqueue"):
+        net_mq = devices.get("networkInterfaceMultiqueue")
+        if net_mq is not True:
+            _fail("devices", "networkInterfaceMultiqueue", f"={net_mq!r} (want True)")
         else:
             _ok("devices", "networkInterfaceMultiqueue")
 
-    # NIC model
-    nic_models = {iface.get("model", "virtio") for iface in interfaces}
-    bad_nics = nic_models & {"e1000", "e1000e", "rtl8139"}
-    if bad_nics:
-        _fail("devices", "NIC model", f"non-virtio NIC ({', '.join(sorted(bad_nics))}) — switch to model: virtio")
-    else:
-        _ok("devices", "NIC model")
-
-    # disk bus and cache (all disks for bus, root disk only for cache)
-    bus_issues = []
-    for disk in disks:
-        bus = (disk.get("disk") or {}).get("bus", "")
-        if bus and bus != "virtio":
-            bus_issues.append(f"{disk.get('name','?')}: bus={bus!r}")
-
-    if bus_issues:
-        _fail("devices", "disk bus", f"non-virtio bus: {', '.join(bus_issues)}")
-    else:
-        _ok("devices", "disk bus")
-
-    # ioThreadsPolicy
-    if io_policy != "supplementalPool":
-        _fail("ioThreads", "ioThreadsPolicy", f"={io_policy!r} (want 'supplementalPool')")
-    else:
-        _ok("ioThreads", "ioThreadsPolicy")
-
-    # ioThreads count
-    vcpus = _to_int(cpu.get("cores", 1), 1) * _to_int(cpu.get("sockets", 1), 1)
-    rec_threads = max(4, min(vcpus // 4, 16)) if vcpus > 1 else 4
-    if not io_count:
-        _fail("ioThreads", "supplementalPoolThreadCount", f"not set (want ≥{rec_threads} based on {vcpus} vCPUs)")
-    else:
-        _ok("ioThreads", "supplementalPoolThreadCount")
-
-    # ── cpu topology ─────────────────────────────────────────────────────────
-    cpu_rules = checks.get("cpu", {})
-    if cpu_rules:
-        sockets = cpu.get("sockets", 1)
-        try:
-            sockets = int(sockets)
-        except (TypeError, ValueError):
-            sockets = 1
-        if sockets > 1:
-            _warn("cpu", "sockets", f"sockets={sockets} — use cores instead; set sockets: 1, threads: 1")
+    # ── NIC model (special: per-interface) ───────────────────────────────────
+    if special.get("nic_model"):
+        interfaces = devices.get("interfaces") or []
+        nic_models = {iface.get("model", "virtio") for iface in interfaces}
+        bad_nics   = nic_models & {"e1000", "e1000e", "rtl8139"}
+        if bad_nics:
+            _fail("devices", "NIC model", f"non-virtio NIC ({', '.join(sorted(bad_nics))}) — switch to model: virtio")
         else:
-            _ok("cpu", "sockets")
+            _ok("devices", "NIC model")
 
-    # ── evictionStrategy (optional) ──────────────────────────────────────────
-    spec = (doc.get("spec") or {}).get("template", {}).get("spec", {})
-    eviction = spec.get("evictionStrategy")
-    if checks.get("evictionStrategy") == "LiveMigrate":
-        if eviction != "LiveMigrate":
-            _warn("spec", "evictionStrategy", f"={eviction!r} — set to 'LiveMigrate' to avoid shutdown on node drain")
+    # ── disk bus (special: per-disk, FAIL if non-virtio) ─────────────────────
+    if special.get("disk_bus"):
+        disks      = devices.get("disks") or []
+        bus_issues = []
+        for disk in disks:
+            bus = (disk.get("disk") or {}).get("bus", "")
+            if bus and bus != "virtio":
+                bus_issues.append(f"{disk.get('name','?')}: bus={bus!r}")
+        if bus_issues:
+            _fail("devices", "disk bus", f"non-virtio bus: {', '.join(bus_issues)}")
         else:
-            _ok("spec", "evictionStrategy")
+            _ok("devices", "disk bus")
+
+    # ── ioThreads count (special: calculated from vCPU count) ────────────────
+    if special.get("io_threads_count"):
+        io_count    = (domain.get("ioThreads") or {}).get("supplementalPoolThreadCount")
+        vcpus       = _to_int(cpu.get("cores", 1), 1) * _to_int(cpu.get("sockets", 1), 1)
+        rec_threads = max(4, min(vcpus // 4, 16)) if vcpus > 1 else 4
+        if not io_count:
+            _fail("ioThreads", "supplementalPoolThreadCount",
+                  f"not set (want ≥{rec_threads} based on {vcpus} vCPUs)")
+        else:
+            _ok("ioThreads", "supplementalPoolThreadCount")
 
     # ── output ────────────────────────────────────────────────────────────────
+    fails    = sum(1 for s, *_ in findings if s == "FAIL")
+    warns    = sum(1 for s, *_ in findings if s == "WARN")
+
     lines = []
     lines.append("=" * 65)
     lines.append("LINUX VM CONFIGURATION AUDIT")
@@ -235,61 +309,33 @@ def check(vm_path):
     lines.append(f"\nVM        : {vm_name}")
     lines.append(f"File      : {vm_path}")
     lines.append(f"Reference : {CHECKS_FILE}")
-    fails = sum(1 for s, *_ in findings if s == "FAIL")
-    warns = sum(1 for s, *_ in findings if s == "WARN")
     lines.append(f"\nResult    : {fails} critical issue(s), {warns} warning(s), {len(passes)} check(s) passed\n")
 
     lines.append(f"  {'Setting':<28} {'Customer VM':<45} {'Recommended':<50} Status")
     lines.append(f"  {'─'*28} {'─'*45} {'─'*50} {'─'*40}")
 
-    def row(setting, customer, recommended, status):
+    # build table: generic rows + special rows
+    table_rows = list(gen_rows)
+
+    if special.get("disk_bus"):
+        disks      = devices.get("disks") or []
+        bus_issues = [(disk.get("disk") or {}).get("bus", "") for disk in disks
+                      if (disk.get("disk") or {}).get("bus", "") not in ("", "virtio")]
+        bus_vals   = list({(d.get("disk") or {}).get("bus", "") for d in disks if (d.get("disk") or {}).get("bus")})
+        bus_str    = ", ".join(sorted(bus_vals)) if bus_vals else "not set"
+        table_rows.append(("disk bus", bus_str, "virtio",
+                           "✅ OK" if not bus_issues else "❌ WRONG BUS"))
+
+    if special.get("io_threads_count"):
+        io_count    = (domain.get("ioThreads") or {}).get("supplementalPoolThreadCount")
+        vcpus       = _to_int(cpu.get("cores", 1), 1) * _to_int(cpu.get("sockets", 1), 1)
+        rec_threads = max(4, min(vcpus // 4, 16)) if vcpus > 1 else 4
+        rec_str     = f"≥{rec_threads} (based on {vcpus} vCPUs)"
+        table_rows.append(("ioThreads", str(io_count) if io_count else "None", rec_str,
+                           "✅ OK" if io_count else "❌ MISSING (requires OCP 4.19+)"))
+
+    for setting, customer, recommended, status in table_rows:
         lines.append(f"  {setting:<28} {customer:<45} {recommended:<50} {status}")
-
-    # disk bus (only if in rules)
-    if dev_rules.get("disk", {}).get("bus") or dev_rules.get("disk", {}).get("root_bus"):
-        bus_vals = list({(d.get("disk") or {}).get("bus", "") for d in disks if (d.get("disk") or {}).get("bus")})
-        bus_str = ", ".join(sorted(bus_vals)) if bus_vals else "not set"
-        row("disk bus", bus_str, "virtio",
-            "✅ OK" if not bus_issues else "❌ WRONG BUS")
-
-    # blockMultiQueue (only if in rules)
-    if dev_rules.get("blockMultiQueue") is not None:
-        row("blockMultiQueue", str(bmq).lower() if bmq is not None else "not set", "true",
-            "✅ OK" if bmq is True else "❌ MISSING")
-
-    # networkInterfaceMultiqueue (only if in rules)
-    if dev_rules.get("networkInterfaceMultiqueue") is not None:
-        row("networkInterfaceMultiqueue", str(net_mq).lower() if net_mq is not None else "not set", "true",
-            "✅ OK" if net_mq is True else "❌ MISSING")
-
-    # NIC model (only if in rules)
-    if dev_rules.get("NIC", {}).get("model") == "virtio":
-        nic_str = ", ".join(sorted(nic_models)) if nic_models else "virtio (default)"
-        row("NIC model", nic_str, "virtio",
-            "❌ WRONG MODEL" if bad_nics else "✅ OK")
-
-    # ioThreads
-    rec_io_str = f"≥{rec_threads} (based on {vcpus} vCPUs)"
-    row("ioThreads", str(io_count) if io_count else "None", rec_io_str,
-        "✅ OK" if io_count else "❌ MISSING (requires OCP 4.19+)")
-    row("ioThreadsPolicy", str(io_policy) if io_policy else "None", "supplementalPool",
-        "✅ OK" if io_policy == "supplementalPool" else "❌ MISSING (requires OCP 4.19+)")
-
-    # cpu topology (only if in rules)
-    if checks.get("cpu"):
-        sockets_val = cpu.get("sockets", "not set")
-        try:
-            sockets_int = int(sockets_val)
-            sockets_ok = sockets_int == 1
-        except (TypeError, ValueError):
-            sockets_ok = False
-        row("cpu.sockets", str(sockets_val), "1 (use cores, not sockets)",
-            "✅ OK" if sockets_ok else "⚠️ >1 — set sockets: 1 and use cores for vCPU count")
-
-    # evictionStrategy (optional)
-    if checks.get("evictionStrategy") == "LiveMigrate":
-        row("evictionStrategy", eviction or "not set", "LiveMigrate",
-            "✅ OK" if eviction == "LiveMigrate" else "⚠️ NOT SET — VM may be shut down on node drain")
 
     lines.append("")
     lines.append("─" * 65)
@@ -327,7 +373,6 @@ def main():
 
     LOGS_DIR.mkdir(exist_ok=True)
     ts   = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    name = Path(args.vm_yaml).stem
     out  = LOGS_DIR / f"perfx_linux_{ts}.log"
     out.write_text(report, encoding="utf-8")
     print(f"\nReport saved to: {out}")
