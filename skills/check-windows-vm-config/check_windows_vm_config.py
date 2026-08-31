@@ -541,7 +541,7 @@ def check(vm_path):
     lines.append("       oc apply -f skills/ocp-analysis/tuned-c1.yaml")
     lines.append("     Verify: oc get profile.tuned.openshift.io -n openshift-cluster-node-tuning-operator")
 
-    if any(s == "FAIL" for s, *_ in findings):
+    if findings:
         lines.append("")
         lines.append("─" * 65)
         lines.append("CORRECTED VM YAML")

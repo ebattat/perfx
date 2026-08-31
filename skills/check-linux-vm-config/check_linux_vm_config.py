@@ -64,29 +64,29 @@ def _generate_corrected_yaml(vm_path, findings):
     checks  = _load_checks()
     changes = []
 
-    failed = {(section, key) for sev, section, key, _ in findings if sev == "FAIL"}
+    actionable = {(section, key) for sev, section, key, _ in findings}
 
     # ioThreads
     cpu    = domain.get("cpu") or {}
     vcpus  = _to_int(cpu.get("cores", 1), 1) * _to_int(cpu.get("sockets", 1), 1)
     rec_threads = max(4, min(vcpus // 4, 16)) if vcpus > 1 else 4
-    if ("ioThreads", "ioThreadsPolicy") in failed or ("ioThreads", "supplementalPoolThreadCount") in failed:
+    if ("ioThreads", "ioThreadsPolicy") in actionable or ("ioThreads", "supplementalPoolThreadCount") in actionable:
         domain["ioThreadsPolicy"] = "supplementalPool"
         domain["ioThreads"] = {"supplementalPoolThreadCount": rec_threads}
         changes.append("ioThreads")
 
     # devices
     devices = domain.setdefault("devices", {})
-    if ("devices", "blockMultiQueue") in failed:
+    if ("devices", "blockMultiQueue") in actionable:
         devices["blockMultiQueue"] = True
         changes.append("blockMultiQueue")
-    if ("devices", "networkInterfaceMultiqueue") in failed:
+    if ("devices", "networkInterfaceMultiqueue") in actionable:
         devices["networkInterfaceMultiqueue"] = True
         changes.append("networkInterfaceMultiqueue")
 
-    # evictionStrategy
+    # evictionStrategy (fix for both FAIL and WARN)
     spec = (doc.get("spec") or {}).get("template", {}).setdefault("spec", {})
-    if ("spec", "evictionStrategy") in failed:
+    if ("spec", "evictionStrategy") in actionable:
         spec["evictionStrategy"] = "LiveMigrate"
         changes.append("evictionStrategy")
 
@@ -306,7 +306,7 @@ def check(vm_path):
     else:
         lines.append("  Configuration matches recommended template.")
 
-    if any(s == "FAIL" for s, *_ in findings):
+    if findings:
         lines.append("")
         lines.append("─" * 65)
         lines.append("CORRECTED VM YAML")
