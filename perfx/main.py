@@ -134,7 +134,7 @@ def main():
 
     try:
         if _cluster_available():
-            answer = input("I noticed a running cluster — analyze it? (y/N): ").strip().lower()
+            answer = input("I noticed a running cluster — analyze it? (y/n): ").strip().lower()
             if answer in ("y", "yes"):
                 _collect_cluster_summary()
     except (KeyboardInterrupt, EOFError):

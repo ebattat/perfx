@@ -410,7 +410,10 @@ def check_vm_config_from_content(yaml_content: str, os_type: str = None) -> dict
     try:
         detected = detect_os(tmp.name)
         resolved = os_type if os_type in ("windows", "linux") else detected
-        skill_script = Path(__file__).parent.parent / "skills" / "check-vm-config" / "check_vm_config.py"
+        if resolved == "linux":
+            skill_script = Path(__file__).parent.parent / "skills" / "check-linux-vm-config" / "check_linux_vm_config.py"
+        else:
+            skill_script = Path(__file__).parent.parent / "skills" / "check-windows-vm-config" / "check_windows_vm_config.py"
         result = subprocess.run(
             ["python3", str(skill_script), tmp.name],
             capture_output=True, text=True, timeout=30

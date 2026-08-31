@@ -27,7 +27,7 @@ Use the `/add-tests` skill. Key rules:
 **Every code change must be accompanied by tests.**
 
 - After editing any `perfx/` or `skills/` file, add or update the corresponding test
-- Test files mirror source: `perfx/foo.py` → `tests/perfx/test_foo.py`, `skills/foo/foo.py` → `tests/perfx/skills/test_foo.py`
+- Test files mirror source: `perfx/foo.py` → `tests/perfx/test_foo.py`, `skills/foo/foo.py` → `tests/perfx/skills/foo/test_foo.py`
 - Verify with: `.venv/bin/pytest tests/ --cov=perfx -q`
 
 ## Knowledge base rule — ALWAYS enforce
@@ -40,9 +40,8 @@ When adding or editing a file in `rules/` or `methodology/`:
 3. Add a step in `## Steps` that tells chai-bot to read the rule before analyzing
 
 **Mapping:**
-- `rules/windows-vm-example.yaml` → `skills/check-vm-config/SKILL.md`
-- `rules/linux-vm-example.yaml` → `skills/check-vm-config/SKILL.md`
-- `rules/host-tuning.md` → `skills/ocp-analysis/SKILL.md`
+- `rules/windows-vm-example.yaml` → `skills/check-windows-vm-config/SKILL.md`
+- `rules/linux-vm-example.yaml` → `skills/check-linux-vm-config/SKILL.md`
 - `rules/host-tuning.md` → `skills/ocp-analysis/SKILL.md`
 - New methodology file → all relevant skills that cover that topic
 

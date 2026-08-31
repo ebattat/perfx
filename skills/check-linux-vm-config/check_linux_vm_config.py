@@ -25,7 +25,13 @@ def _load(path):
         raw = f.read()
     raw = re.sub(r'\{%-?.*?-?%\}', '', raw)
     raw = re.sub(r'\{\{.*?\}\}', '"__template__"', raw)
-    return yaml.safe_load(raw)
+    # handle multi-document YAML — find the VirtualMachine document
+    docs = list(yaml.safe_load_all(raw))
+    docs = [d for d in docs if d]  # filter None (empty docs)
+    for doc in docs:
+        if doc.get("kind") == "VirtualMachine":
+            return doc
+    return docs[0] if docs else {}
 
 
 def _domain(doc):
@@ -97,25 +103,15 @@ def check(vm_path):
 
     # disk bus and cache (all disks for bus, root disk only for cache)
     bus_issues = []
-    cache_missing = False
     for disk in disks:
         bus = (disk.get("disk") or {}).get("bus", "")
-        cache = (disk.get("disk") or {}).get("cache", "")
         if bus and bus != "virtio":
             bus_issues.append(f"{disk.get('name','?')}: bus={bus!r}")
-        if disk.get("bootOrder") == 1:
-            if cache != "none":
-                cache_missing = True
 
     if bus_issues:
         _fail("devices", "disk bus", f"non-virtio bus: {', '.join(bus_issues)}")
     else:
         _ok("devices", "disk bus")
-
-    if cache_missing:
-        _fail("devices", "disk cache", "root disk cache not set to 'none' — risk of buffered IO after live migration")
-    else:
-        _ok("devices", "disk cache")
 
     # ioThreadsPolicy
     if io_policy != "supplementalPool":
@@ -135,6 +131,19 @@ def check(vm_path):
         _fail("ioThreads", "supplementalPoolThreadCount", f"not set (want ≥{rec_threads} based on {vcpus} vCPUs)")
     else:
         _ok("ioThreads", "supplementalPoolThreadCount")
+
+    # ── cpu topology ─────────────────────────────────────────────────────────
+    cpu_rules = checks.get("cpu", {})
+    if cpu_rules:
+        sockets = cpu.get("sockets", 1)
+        try:
+            sockets = int(sockets)
+        except (TypeError, ValueError):
+            sockets = 1
+        if sockets > 1:
+            _warn("cpu", "sockets", f"sockets={sockets} — use cores instead; set sockets: 1, threads: 1")
+        else:
+            _ok("cpu", "sockets")
 
     # ── evictionStrategy (optional) ──────────────────────────────────────────
     spec = (doc.get("spec") or {}).get("template", {}).get("spec", {})
@@ -163,30 +172,28 @@ def check(vm_path):
     def row(setting, customer, recommended, status):
         lines.append(f"  {setting:<28} {customer:<45} {recommended:<50} {status}")
 
-    # disk bus
-    bus_vals = list({(d.get("disk") or {}).get("bus", "?") for d in disks})
-    bus_str = ", ".join(bus_vals) if bus_vals else "not set"
-    row("disk bus", bus_str, "virtio",
-        "✅ OK" if not bus_issues else "❌ WRONG BUS")
+    # disk bus (only if in rules)
+    if dev_rules.get("disk", {}).get("bus") or dev_rules.get("disk", {}).get("root_bus"):
+        bus_vals = list({(d.get("disk") or {}).get("bus", "") for d in disks if (d.get("disk") or {}).get("bus")})
+        bus_str = ", ".join(sorted(bus_vals)) if bus_vals else "not set"
+        row("disk bus", bus_str, "virtio",
+            "✅ OK" if not bus_issues else "❌ WRONG BUS")
 
-    # disk cache (root disk)
-    root_cache = next(((d.get("disk") or {}).get("cache", "not set")
-                       for d in disks if d.get("bootOrder") == 1), "not set")
-    row("disk cache (root)", root_cache, "none",
-        "✅ OK" if root_cache == "none" else "⚠️ NOT SET — risk of buffered IO after live migration")
+    # blockMultiQueue (only if in rules)
+    if dev_rules.get("blockMultiQueue") is not None:
+        row("blockMultiQueue", str(bmq).lower() if bmq is not None else "not set", "true",
+            "✅ OK" if bmq is True else "❌ MISSING")
 
-    # blockMultiQueue
-    row("blockMultiQueue", str(bmq).lower() if bmq is not None else "not set", "true",
-        "✅ OK" if bmq is True else "❌ MISSING")
+    # networkInterfaceMultiqueue (only if in rules)
+    if dev_rules.get("networkInterfaceMultiqueue") is not None:
+        row("networkInterfaceMultiqueue", str(net_mq).lower() if net_mq is not None else "not set", "true",
+            "✅ OK" if net_mq is True else "❌ MISSING")
 
-    # networkInterfaceMultiqueue
-    row("networkInterfaceMultiqueue", str(net_mq).lower() if net_mq is not None else "not set", "true",
-        "✅ OK" if net_mq is True else "❌ MISSING")
-
-    # NIC model
-    nic_str = ", ".join(sorted(nic_models)) if nic_models else "virtio (default)"
-    row("NIC model", nic_str, "virtio",
-        "❌ WRONG MODEL" if bad_nics else "✅ OK")
+    # NIC model (only if in rules)
+    if dev_rules.get("NIC", {}).get("model") == "virtio":
+        nic_str = ", ".join(sorted(nic_models)) if nic_models else "virtio (default)"
+        row("NIC model", nic_str, "virtio",
+            "❌ WRONG MODEL" if bad_nics else "✅ OK")
 
     # ioThreads
     rec_io_str = f"≥{rec_threads} (based on {vcpus} vCPUs)"
@@ -195,18 +202,34 @@ def check(vm_path):
     row("ioThreadsPolicy", str(io_policy) if io_policy else "None", "supplementalPool",
         "✅ OK" if io_policy == "supplementalPool" else "❌ MISSING (requires OCP 4.19+)")
 
+    # cpu topology (only if in rules)
+    if checks.get("cpu"):
+        sockets_val = cpu.get("sockets", "not set")
+        try:
+            sockets_int = int(sockets_val)
+            sockets_ok = sockets_int == 1
+        except (TypeError, ValueError):
+            sockets_ok = False
+        row("cpu.sockets", str(sockets_val), "1 (use cores, not sockets)",
+            "✅ OK" if sockets_ok else "⚠️ >1 — set sockets: 1 and use cores for vCPU count")
+
+    # evictionStrategy (optional)
+    if checks.get("evictionStrategy") == "LiveMigrate":
+        row("evictionStrategy", eviction or "not set", "LiveMigrate",
+            "✅ OK" if eviction == "LiveMigrate" else "⚠️ NOT SET — VM may be shut down on node drain")
+
     lines.append("")
     lines.append("─" * 65)
     lines.append("RECOMMENDATION")
     lines.append("─" * 65)
-    if any(s == "FAIL" for s, *_ in findings):
+    if findings:
         lines.append(f"  Reference: {CHECKS_FILE.relative_to(CHECKS_FILE.parent.parent)}")
         lines.append("")
         lines.append(f"  {'Setting':<35} {'Issue'}")
         lines.append(f"  {'─'*35} {'─'*40}")
         for sev, section, key, detail in findings:
-            if sev == "FAIL":
-                lines.append(f"  {section+'.'+key:<35} {detail}")
+            prefix = "❌" if sev == "FAIL" else "⚠️"
+            lines.append(f"  {prefix} {section+'.'+key:<33} {detail}")
     else:
         lines.append("  Configuration matches recommended template.")
 
