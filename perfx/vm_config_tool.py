@@ -458,11 +458,15 @@ def check_vm_config_from_content(yaml_content: str, os_type: str = None) -> dict
                 elif findings:
                     break
 
+        critical_count = sum(1 for f in findings if f.startswith("❌"))
+        warn_count = sum(1 for f in findings if f.startswith("⚠️"))
+
         compact = []
         if result_line:
             compact.append(result_line)
         if severity_line:
             compact.append(severity_line)
+        compact.append(f"IMPORTANT: There are exactly {critical_count} critical (❌) and {warn_count} warning (⚠️) issues. Do not recount.")
         if findings:
             compact.append("\nFindings:")
             compact.extend(f"  {f}" for f in findings)
