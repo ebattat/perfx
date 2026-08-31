@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-SCRIPT = Path(__file__).parent.parent.parent.parent / "skills" / "ocp-analysis" / "analyze_ocp.py"
+SCRIPT = Path(__file__).parent.parent.parent.parent.parent / "skills" / "ocp-analysis" / "analyze_ocp.py"
 spec = importlib.util.spec_from_file_location("analyze_ocp", SCRIPT)
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
@@ -67,9 +67,7 @@ class TestToGib:
         assert mod._to_gib("524288000Ki") == "500Gi"
 
     def test_ki_nonzero_preserves_value(self):
-        result = mod._to_gib("524288Ki")
-        assert result != "0Gi"
-        assert "Gi" in result
+        assert mod._to_gib("524288Ki") == "0.5Gi"
 
     def test_gi(self):
         assert mod._to_gib("256Gi") == "256Gi"

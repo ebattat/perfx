@@ -34,6 +34,10 @@ ioThreadsPolicy: supplementalPool
 machine:
   type: q35                        # minimum; pc-q35-rhel9.8.0+ required for OCP 4.22 coalescing
 
+cpu:
+  sockets: 1                       # set all vCPUs in cores, not sockets — sockets: 1, threads: 1
+  threads: 1
+
 evictionStrategy: LiveMigrate      # optional — WARNING if missing; ensures VM is live migrated on node drain
 
 features:

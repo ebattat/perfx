@@ -1,58 +1,52 @@
 # Linux VM Recommended Configuration
-# Source: https://github.com/redhat-performance/benchmark-runner/blob/main/benchmark_runner/common/template_operations/templates/bootstorm/internal_data/bootstorm_vm_template.yaml
+# Source: https://github.com/redhat-performance/benchmark-runner/blob/main/benchmark_runner/common/template_operations/templates/linux/internal_data
 # Reference: https://developers.redhat.com/blog/2026/05/06/best-practice-configuration-and-tuning-linux-and-windows-vms#vm_definition
+# Reference: https://developers.redhat.com/blog/2025/06/23/feature-introduction-multiple-iothreads-openshift-virtualization
 # Use this as the reference when checking a customer Linux VM configuration.
 
 apiVersion: kubevirt.io/v1
 kind: VirtualMachine
+metadata:
+  name: <set>
 spec:
-  # Always apply a VirtualMachineClusterPreference — applies critical optimizations automatically
-  # List available: oc get VirtualMachineClusterPreference
-  preference:
-    name: <set>                     # List available: oc get VirtualMachineClusterPreference
+  runStrategy: Always
   template:
+    metadata:
+      annotations:
+        vm.kubevirt.io/os: rhel9
+      labels:
+        kubevirt-vm: <set>
     spec:
+      evictionStrategy: LiveMigrate     # ensures VM is live migrated on node drain
       domain:
         cpu:
-          cores: <set>
           sockets: 1
-          threads: 1
+          cores: <set>
+        ioThreadsPolicy: supplementalPool       # OCP 4.19+ — offloads IO from vCPU threads
+        ioThreads:
+          supplementalPoolThreadCount: <set>    # depends on vCPU count — start at 4, scale up for fast storage
+                                                # Reference: https://developers.redhat.com/blog/2025/06/23/feature-introduction-multiple-iothreads-openshift-virtualization
         devices:
-          blockMultiQueue: true             # enables multi-queue for block devices (OCP 4.19+)
+          blockMultiQueue: true                 # enables multi-queue for block devices (OCP 4.19+)
+          networkInterfaceMultiqueue: true
           disks:
           - disk:
-              bus: virtio             # virtio = best performance
-                                      # NEVER use bus: sata
-              cache: none             # enforce Direct I/O — prevents silent switch to buffered IO after live migration
+              bus: virtio                       # virtio = best performance, NEVER use sata
             name: containerdisk
           - disk:
               bus: virtio
-              cache: none
             name: cloudinitdisk
           interfaces:
           - masquerade: {}
-            model: virtio             # NEVER use model: e1000e
-          networkInterfaceMultiqueue: true
-        ioThreads:
-          supplementalPoolThreadCount: <set>  # depends on vCPU count — start at 4, scale up for fast storage (OCP 4.19+)
-                                              # Reference: https://developers.redhat.com/blog/2025/06/23/feature-introduction-multiple-iothreads-openshift-virtualization
-        ioThreadsPolicy: supplementalPool   # OCP 4.19+ — offloads IO from vCPU threads
+            model: virtio                       # NEVER use model: e1000 or e1000e
+            name: default
+        machine:
+          type: <set>
         resources:
           requests:
             memory: <set>
             cpu: <set>
           limits:
-            memory: <set>             # limits must match requests for guaranteed QoS
+            memory: <set>                       # limits must match requests for guaranteed QoS
             cpu: <set>
-      evictionStrategy: LiveMigrate
       terminationGracePeriodSeconds: 180
-      volumes:
-      - containerDisk:
-          image: <rhel-or-fedora-container-disk>
-        name: containerdisk
-      - cloudInitNoCloud:
-          userData: |-
-            #cloud-config
-            password: <set>
-            chpasswd: { expire: False }
-        name: cloudinitdisk

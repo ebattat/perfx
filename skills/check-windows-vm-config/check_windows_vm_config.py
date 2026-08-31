@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
 Check Windows VM YAML configuration against rules/windows-vm-checks.yaml.
-Usage: python3 check_vm_config.py <customer-vm.yaml>
+Usage: python3 check_windows_vm_config.py <customer-vm.yaml>
 """
+import os
 import sys
 import re
 from datetime import datetime
@@ -16,16 +17,21 @@ except ImportError:
 
 
 RULES_DIR = Path(__file__).parent.parent.parent / "rules"
-LOGS_DIR  = Path(__file__).parent.parent.parent / "logs"
+LOGS_DIR  = Path(os.environ.get("PERFX_LOGS_DIR", Path(__file__).parent.parent.parent / "logs"))
 CHECKS_FILE = RULES_DIR / "windows-vm-checks.yaml"
-
 
 def _load(path):
     with open(path) as f:
         raw = f.read()
     raw = re.sub(r'\{%-?.*?-?%\}', '', raw)
     raw = re.sub(r'\{\{.*?\}\}', '"__template__"', raw)
-    return yaml.safe_load(raw)
+    # handle multi-document YAML — find the VirtualMachine document
+    docs = list(yaml.safe_load_all(raw))
+    docs = [d for d in docs if d]  # filter None (empty docs)
+    for doc in docs:
+        if doc.get("kind") == "VirtualMachine":
+            return doc
+    return docs[0] if docs else {}
 
 
 def _domain(doc):
@@ -40,6 +46,32 @@ def _load_checks():
         print(f"ERROR: rules file not found: {CHECKS_FILE}", file=sys.stderr)
         sys.exit(1)
     return yaml.safe_load(CHECKS_FILE.read_text())
+
+
+def _to_int(v, default=1):
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return default
+
+
+def _detect_os(vm_path):
+    """Detect VM OS — returns 'windows', 'linux', or 'unknown'."""
+    doc = _load(vm_path)
+    domain = (doc.get("spec", {}).get("template", {}).get("spec", {}).get("domain", {}))
+    if domain.get("features", {}).get("hyperv"):
+        return "windows"
+    preference = (doc.get("spec") or {}).get("preference", {}).get("name", "")
+    if "windows" in preference.lower():
+        return "windows"
+    os_label = ((doc.get("spec") or {}).get("template", {})
+                .get("metadata", {}).get("annotations", {})
+                .get("vm.kubevirt.io/os", ""))
+    if os_label and "windows" in os_label.lower():
+        return "windows"
+    if os_label and os_label not in ("", "__template__"):
+        return "linux"
+    return "unknown"
 
 
 def _generate_corrected_yaml(vm_path, findings):
@@ -85,11 +117,7 @@ def _generate_corrected_yaml(vm_path, findings):
 
     # ioThreads
     cpu = domain.get("cpu", {})
-    vcpus = (cpu.get("cores", 1) or 1) * (cpu.get("sockets", 1) or 1)
-    try:
-        vcpus = int(vcpus)
-    except (TypeError, ValueError):
-        vcpus = 1
+    vcpus = _to_int(cpu.get("cores", 1), 1) * _to_int(cpu.get("sockets", 1), 1)
     if ("ioThreads", "ioThreadsPolicy") in failed:
         domain["ioThreadsPolicy"] = "supplementalPool"
         domain["ioThreads"] = {"supplementalPoolThreadCount": max(2, vcpus // 4)}
@@ -302,8 +330,10 @@ def check(vm_path):
 
     # ── machine type ─────────────────────────────────────────────────────────
     mtype = (domain.get("machine") or {}).get("type", "")
-    if mtype and mtype < "pc-q35-rhel9.8.0":
-        _warn("machine", "type", f"={mtype!r} — too old for OCP 4.22 coalescing (need pc-q35-rhel9.8.0+)")
+    _min_mtype = "pc-q35-rhel9.8.0"
+    mtype_ok = bool(mtype) and mtype >= _min_mtype
+    if not mtype_ok:
+        _warn("machine", "type", f"={mtype!r} — too old for OCP 4.22 coalescing (need {_min_mtype}+)")
     else:
         _ok("machine", "type")
 
@@ -313,12 +343,27 @@ def check(vm_path):
     else:
         _ok("ioThreads", "ioThreadsPolicy")
 
-    vcpus = (cpu.get("cores", 1) or 1) * (cpu.get("sockets", 1) or 1)
+    vcpus = _to_int(cpu.get("cores", 1), 1) * _to_int(cpu.get("sockets", 1), 1)
     rec_threads = max(2, min(vcpus // 4, 16)) if vcpus > 1 else 2
     if not io_count:
         _fail("ioThreads", "supplementalPoolThreadCount", f"not set (want ≥{rec_threads} based on {vcpus} vCPUs)")
     else:
         _ok("ioThreads", "supplementalPoolThreadCount")
+
+    # ── cpu topology ─────────────────────────────────────────────────────────
+    cpu_rules = checks.get("cpu", {})
+    if cpu_rules:
+        sockets = cpu.get("sockets", 1)
+        threads = cpu.get("threads", 1)
+        try:
+            sockets = int(sockets)
+            threads = int(threads)
+        except (TypeError, ValueError):
+            sockets = threads = 1
+        if sockets > 1:
+            _warn("cpu", "sockets", f"sockets={sockets} — use cores instead; set sockets: 1, threads: 1")
+        else:
+            _ok("cpu", "sockets")
 
     # ── evictionStrategy (optional) ──────────────────────────────────────────
     spec = (doc.get("spec") or {}).get("template", {}).get("spec", {})
@@ -361,7 +406,9 @@ def check(vm_path):
     lines.append(f"Reference : {CHECKS_FILE}")
     fails = sum(1 for s, *_ in findings if s == "FAIL")
     warns = sum(1 for s, *_ in findings if s == "WARN")
-    lines.append(f"\nResult    : {fails} critical issue(s), {warns} warning(s), {len(passes)} check(s) passed\n")
+    severity = "CRITICAL" if fails > 0 else ("WARNING" if warns > 0 else "OK")
+    lines.append(f"\nResult    : {fails} critical issue(s), {warns} warning(s), {len(passes)} check(s) passed")
+    lines.append(f"Severity  : {severity}\n")
 
     lines.append(f"  {'Setting':<28} {'Customer VM':<45} {'Recommended':<50} Status")
     lines.append(f"  {'─'*28} {'─'*45} {'─'*50} {'─'*40}")
@@ -420,8 +467,8 @@ def check(vm_path):
         "✅ OK" if ok_bus else "⚠️ CHECK")
 
     # machine type
-    row("machine type", mtype or "not set", "pc-q35-rhel9.8.0+",
-        "✅ OK" if mtype >= "pc-q35-rhel9.8.0" else "⚠️ OLD — too old for OCP 4.22 coalescing")
+    row("machine type", mtype or "not set", f"{_min_mtype}+",
+        "✅ OK" if mtype_ok else "⚠️ OLD — too old for OCP 4.22 coalescing")
 
     # firmware
     fw_str = "efi" if efi else ("bios: {}" if bios else "not set")
@@ -436,6 +483,17 @@ def check(vm_path):
     nic_str = ", ".join(sorted(nic_models)) if nic_models else "virtio (default)"
     row("NIC model", nic_str, "virtio",
         "❌ WRONG MODEL" if bad_nics else "✅ OK")
+
+    # cpu topology (only if in rules)
+    if checks.get("cpu"):
+        sockets_val = cpu.get("sockets", "not set")
+        try:
+            sockets_int = int(sockets_val)
+            sockets_ok = sockets_int == 1
+        except (TypeError, ValueError):
+            sockets_ok = False
+        row("cpu.sockets", str(sockets_val), "1 (use cores, not sockets)",
+            "✅ OK" if sockets_ok else "⚠️ >1 — set sockets: 1 and use cores for vCPU count")
 
     # evictionStrategy (optional)
     if checks.get("evictionStrategy") == "LiveMigrate":
@@ -457,14 +515,15 @@ def check(vm_path):
     lines.append("─" * 65)
     lines.append("RECOMMENDATION")
     lines.append("─" * 65)
-    if any(s == "FAIL" for s, *_ in findings):
+    if findings:
         lines.append(f"  Reference: {CHECKS_FILE.relative_to(CHECKS_FILE.parent.parent)}")
         lines.append("")
+        lines.append("  FINDINGS:")
         lines.append(f"  {'Setting':<35} {'Issue'}")
         lines.append(f"  {'─'*35} {'─'*40}")
         for sev, section, key, detail in findings:
-            if sev == "FAIL":
-                lines.append(f"  {section+'.'+key:<35} {detail}")
+            prefix = "❌" if sev == "FAIL" else "⚠️"
+            lines.append(f"  {prefix} {section+'.'+key:<33} {detail}")
     else:
         lines.append("  Configuration matches recommended template.")
 
@@ -474,7 +533,7 @@ def check(vm_path):
     lines.append("─" * 65)
     lines.append("  1. Remove platform clock override (run inside guest, then reboot):")
     lines.append("       bcdedit /deletevalue useplatformclock")
-    lines.append("  2. Verify VBS is disabled:")
+    lines.append("  2. Verify VBS is disabled (run inside Windows guest, then reboot):")
     lines.append("       msinfo32 → Virtualization-based security: Not enabled")
     lines.append("     To disable: Windows Security → Device Security → Core isolation")
     lines.append("                 → Memory integrity → Off  (then reboot)")
@@ -482,7 +541,7 @@ def check(vm_path):
     lines.append("       oc apply -f skills/ocp-analysis/tuned-c1.yaml")
     lines.append("     Verify: oc get profile.tuned.openshift.io -n openshift-cluster-node-tuning-operator")
 
-    if any(s == "FAIL" for s, *_ in findings):
+    if findings:
         lines.append("")
         lines.append("─" * 65)
         lines.append("CORRECTED VM YAML")
@@ -490,72 +549,79 @@ def check(vm_path):
         corrected = _generate_corrected_yaml(vm_path, findings)
         lines.append(corrected)
 
+    total_checks = len(findings) + len(passes)
+    lines.append("")
+    lines.append("─" * 65)
+    lines.append("SUMMARY")
+    lines.append("─" * 65)
+    lines.append(f"  {len(passes)}/{total_checks} checks passed — {fails} critical, {warns} warning(s)")
+
     return "\n".join(lines)
 
 
 def _list_vms():
-    """List all running VMs across all namespaces using cluster_tool."""
-    sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-    from perfx.cluster_tool import list_cluster_vms
-    result = list_cluster_vms()
-    if "error" in result:
-        print(f"ERROR: {result['error']}", file=sys.stderr)
+    """List all running VMs across all namespaces via oc CLI."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["oc", "get", "vm", "--all-namespaces", "-o", "wide"],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode != 0:
+            print(f"ERROR: {result.stderr.strip()}", file=sys.stderr)
+            sys.exit(1)
+        print(result.stdout)
+    except FileNotFoundError:
+        print("ERROR: 'oc' not found — is OpenShift CLI installed?", file=sys.stderr)
         sys.exit(1)
-    print(result["table"])
 
 
 def _fetch_vm_yaml(name, namespace):
-    """Fetch VM YAML from cluster using cluster_tool and return temp file path."""
-    sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-    from perfx.cluster_tool import fetch_cluster_vm_yaml
-    result = fetch_cluster_vm_yaml(name, namespace)
-    if "error" in result:
-        print(f"ERROR: {result['error']}", file=sys.stderr)
+    """Fetch VM YAML from cluster via oc CLI and return a temp file path."""
+    import subprocess
+    import tempfile
+    try:
+        result = subprocess.run(
+            ["oc", "get", "vm", name, "-n", namespace, "-o", "yaml"],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode != 0:
+            print(f"ERROR: {result.stderr.strip()}", file=sys.stderr)
+            sys.exit(1)
+        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False)
+        tmp.write(result.stdout)
+        tmp.close()
+        return tmp.name
+    except FileNotFoundError:
+        print("ERROR: 'oc' not found — is OpenShift CLI installed?", file=sys.stderr)
         sys.exit(1)
-    return result["path"]
 
 
 def main():
     import argparse
-    parser = argparse.ArgumentParser(description="Check VM configuration against best practices")
-    parser.add_argument("vm_yaml", nargs="?", help="Path to VM YAML file")
-    parser.add_argument("--vm", help="VM name to fetch from cluster")
-    parser.add_argument("--namespace", "-n", help="Namespace of the VM")
-    parser.add_argument("--list", action="store_true", help="List all running VMs")
+    parser = argparse.ArgumentParser(description="Check Windows VM YAML against best practices")
+    parser.add_argument("vm_yaml", help="Path to VM YAML file")
+    parser.add_argument("--os", choices=["windows", "linux"], help="Override OS detection")
     args = parser.parse_args()
 
-    if args.list:
-        _list_vms()
-        return
+    vm_path = args.vm_yaml
 
-    fetched_tmp = None
-    if args.vm:
-        vm_path = _fetch_vm_yaml(args.vm, args.namespace)
-        fetched_tmp = vm_path
-        print(f"Fetched VM '{args.vm}' from cluster\n")
-    elif args.vm_yaml:
-        vm_path = args.vm_yaml
-    else:
-        parser.print_help()
+    detected_os = args.os or _detect_os(vm_path)
+    if detected_os == "linux":
+        print("ERROR: VM detected as Linux — use check_linux_vm_config.py for Linux VMs.",
+              file=sys.stderr)
         sys.exit(1)
+    if detected_os == "unknown":
+        print("Note: OS not detected from YAML — running Windows check (use --os to override).")
 
-    try:
-        sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-        from perfx.vm_config_tool import detect_os
-        detect_os(vm_path)
+    report = check(vm_path)
+    print(report)
 
-        report = check(vm_path)
-        print(report)
-
-        LOGS_DIR.mkdir(exist_ok=True)
-        ts   = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        name = args.vm or Path(vm_path).stem
-        out  = LOGS_DIR / f"vm_config_audit_{name}_{ts}.log"
-        out.write_text(report)
-        print(f"\nReport saved to: {out}")
-    finally:
-        if fetched_tmp:
-            Path(fetched_tmp).unlink(missing_ok=True)
+    LOGS_DIR.mkdir(exist_ok=True)
+    ts  = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    out = LOGS_DIR / f"perfx_windows_{ts}.log"
+    out.write_text(report)
+    print(f"\nReport saved to: {out}")
 
 
 if __name__ == "__main__":

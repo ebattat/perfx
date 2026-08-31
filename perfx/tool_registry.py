@@ -1,5 +1,5 @@
 from google.genai import types as gtypes
-from perfx.vm_config_tool import check_vm_config, check_linux_vm_config, detect_os, check_vm_config_from_content
+from perfx.vm_config_tool import check_vm_config, check_linux_vm_config, detect_os, check_vm_config_from_content, check_vm_config_from_path
 from perfx.knowledge_tool import read_rules, read_file
 from perfx.cluster_tool import list_cluster_vms, fetch_cluster_vm_yaml
 from perfx.gdrive.gdrive import list_gdrive_folder, read_gdrive, search_gdrive
@@ -31,6 +31,7 @@ DISPATCH = {
     "check_vm_config": check_vm_config,
     "check_linux_vm_config": check_linux_vm_config,
     "detect_os": detect_os,
+    "check_vm_config_from_path": check_vm_config_from_path,
     "check_vm_config_from_content": check_vm_config_from_content,
     "github_get_issue": github_get_issue,
     "github_list_issues": github_list_issues,
@@ -125,11 +126,30 @@ TOOL_DECLARATIONS = [
                 ),
             ),
             gtypes.FunctionDeclaration(
+                name="check_vm_config_from_path",
+                description=(
+                    "PREFERRED: Check a VM YAML configuration from a local file path. "
+                    "Use this whenever the user provides a file path — do NOT read the file first. "
+                    "IMPORTANT: Before calling, always ask the user 'Is this a Windows or Linux VM?' "
+                    "and pass their answer as os_type. Do not rely on auto-detection alone."
+                ),
+                parameters=gtypes.Schema(
+                    type=gtypes.Type.OBJECT,
+                    properties={
+                        "path": gtypes.Schema(type=gtypes.Type.STRING,
+                                              description="Absolute path to the VM YAML file"),
+                        "os_type": gtypes.Schema(type=gtypes.Type.STRING,
+                                                 description="Override OS: 'windows' or 'linux'. Omit to auto-detect."),
+                    },
+                    required=["path"],
+                ),
+            ),
+            gtypes.FunctionDeclaration(
                 name="check_vm_config_from_content",
                 description=(
-                    "Check a VM YAML configuration from content string (not a file path). "
-                    "Use this when the YAML content comes from Google Drive or another source. "
-                    "Auto-detects Windows vs Linux and runs the appropriate check."
+                    "Check a VM YAML configuration from content string. "
+                    "Use ONLY when the YAML comes from Google Drive or is not a local file. "
+                    "If the user provided a file path, use check_vm_config_from_path instead."
                 ),
                 parameters=gtypes.Schema(
                     type=gtypes.Type.OBJECT,
@@ -375,8 +395,14 @@ ANTHROPIC_TOOLS = [
     {"name": "read_rules",
      "description": "Read rules and methodology files from the PerfX knowledge base. Use this whenever the user asks about performance issues, recommendations, or investigation steps — ALWAYS call this first before answering from memory. Topics: 'io', 'io-degradation', 'memory', 'network', 'vmexit', 'cpu', 'windows-vm', 'linux-vm'.",
      "input_schema": {"type": "object", "properties": {"topic": {"type": "string", "description": "Topic to search, e.g. 'io-degradation', 'memory', 'vmexit'"}}, "required": ["topic"]}},
+    {"name": "check_vm_config_from_path",
+     "description": "PREFERRED: Check a VM YAML configuration from a local file path. Use this whenever the user provides a file path — do NOT read the file first. IMPORTANT: Before calling, always ask the user 'Is this a Windows or Linux VM?' and pass their answer as os_type.",
+     "input_schema": {"type": "object", "properties": {
+         "path": {"type": "string", "description": "Absolute path to the VM YAML file"},
+         "os_type": {"type": "string", "description": "Override OS: 'windows' or 'linux'. Omit to auto-detect."}
+     }, "required": ["path"]}},
     {"name": "check_vm_config_from_content",
-     "description": "Check a VM YAML configuration from content string. Use when YAML content comes from Google Drive or another source. Always confirm os_type with the user before calling.",
+     "description": "Check a VM YAML configuration from content string. Use ONLY when YAML comes from Google Drive or is not a local file. If user gave a file path, use check_vm_config_from_path instead.",
      "input_schema": {"type": "object", "properties": {
          "yaml_content": {"type": "string", "description": "The full YAML content string"},
          "os_type": {"type": "string", "description": "OS type: 'windows' or 'linux' — confirmed by user"}

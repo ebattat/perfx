@@ -14,13 +14,15 @@ HYPERV_KEYS = [
 def detect_os(path: str) -> str:
     """Detect whether a VM YAML is for Windows or Linux.
 
-    Returns 'windows' if hyperv features or a windows preference are present,
-    otherwise returns 'linux'.
+    Returns 'windows' if hyperv features, a windows preference, or a windows
+    OS label are present. Returns 'linux' only when the OS label explicitly
+    confirms it. Falls back to 'windows' when detection is ambiguous so the
+    more comprehensive Windows check runs rather than being silently skipped.
     """
     try:
         doc = _load_yaml(path)
     except Exception:
-        return "linux"
+        return "windows"
     domain = (
         (doc.get("spec") or {})
         .get("template", {})
@@ -34,7 +36,20 @@ def detect_os(path: str) -> str:
     preference = (doc.get("spec") or {}).get("preference", {}).get("name", "")
     if "windows" in preference.lower():
         return "windows"
-    return "linux"
+    # vm.kubevirt.io/os label — only trust an explicit non-empty value
+    os_label = (
+        (doc.get("spec") or {})
+        .get("template", {})
+        .get("metadata", {})
+        .get("annotations", {})
+        .get("vm.kubevirt.io/os", "")
+    )
+    if os_label and "windows" in os_label.lower():
+        return "windows"
+    if os_label and os_label not in ("", "__template__"):
+        return "linux"
+    # ambiguous — default to windows so the full check runs
+    return "windows"
 
 
 CLOCK_CHECKS = {
@@ -397,31 +412,96 @@ def check_linux_vm_config(path: str) -> dict:
     }
 
 
-def check_vm_config_from_content(yaml_content: str, os_type: str = None) -> dict:
-    """Check VM config from YAML content string using the check-vm-config skill script.
+def check_vm_config_from_path(path: str, os_type: str = None) -> dict:
+    """Check VM config from a local file path.
 
-    os_type: 'windows' or 'linux'. If not provided, auto-detects from content.
-    Always confirm os_type with the user before calling this function.
+    Preferred over check_vm_config_from_content when a file path is available —
+    avoids passing the full YAML as a string argument.
+    os_type: 'windows' or 'linux'. Auto-detects if not provided.
+    """
+    return _run_vm_config_check(path, os_type, cleanup=False)
+
+
+def _run_vm_config_check(path: str, os_type: str = None, cleanup: bool = False) -> dict:
+    """Run the appropriate VM config skill script (check-windows-vm-config or check-linux-vm-config).
+
+    Routes to check_linux_vm_config.py for Linux, check_windows_vm_config.py for Windows/unknown.
+    Returns a compact dict with severity, findings, and log path.
     """
     import subprocess
+    try:
+        detected = detect_os(path)
+        resolved = os_type if os_type in ("windows", "linux") else detected
+        if resolved == "linux":
+            skill_script = Path(__file__).parent.parent / "skills" / "check-linux-vm-config" / "check_linux_vm_config.py"
+        else:
+            skill_script = Path(__file__).parent.parent / "skills" / "check-windows-vm-config" / "check_windows_vm_config.py"
+        result = subprocess.run(
+            ["python3", str(skill_script), path],
+            capture_output=True, text=True, timeout=30
+        )
+        full_output = result.stdout if result.stdout else result.stderr
+        lines = full_output.splitlines()
+
+        # extract key metrics
+        result_line = next((l for l in lines if l.startswith("Result")), "")
+        severity_line = next((l for l in lines if l.startswith("Severity")), "")
+        summary_line = next((l for l in lines if "checks passed" in l), "")
+        log_line = next((l for l in lines if "Report saved to:" in l), "")
+
+        # extract only the FINDINGS lines (skip table — too many rows)
+        findings = []
+        in_findings = False
+        for ln in lines:
+            if "FINDINGS:" in ln:
+                in_findings = True
+                continue
+            if in_findings:
+                stripped = ln.strip()
+                if not stripped or stripped.startswith("─") or stripped.startswith("Setting"):
+                    continue
+                if stripped.startswith("❌") or stripped.startswith("⚠️"):
+                    findings.append(stripped)
+                elif findings:
+                    break
+
+        critical_count = sum(1 for f in findings if f.startswith("❌"))
+        warn_count = sum(1 for f in findings if f.startswith("⚠️"))
+
+        compact = []
+        if result_line:
+            compact.append(result_line)
+        if severity_line:
+            compact.append(severity_line)
+        compact.append(f"IMPORTANT: There are exactly {critical_count} critical (❌) and {warn_count} warning (⚠️) issues. Do not recount.")
+        if findings:
+            compact.append("\nFindings:")
+            compact.extend(f"  {f}" for f in findings)
+        if summary_line:
+            compact.append(f"\n{summary_line.strip()}")
+        if log_line:
+            compact.append(log_line)
+        compact.append("\nINSTRUCTION: Reply in 2 sentences max — state severity and tell the user the full report is in the log file. Do not list individual findings.")
+
+        return {
+            "severity": "CRITICAL" if "❌" in full_output else "PASS",
+            "detected_os": detected,
+            "used_os": resolved,
+            "table": "\n".join(compact),
+            "summary": f"VM config checked as {resolved}. Full report: {log_line}",
+        }
+    finally:
+        if cleanup:
+            Path(path).unlink(missing_ok=True)
+
+
+def check_vm_config_from_content(yaml_content: str, os_type: str = None) -> dict:
+    """Check VM config from YAML content string.
+
+    Prefer check_vm_config_from_path when a file path is available.
+    os_type: 'windows' or 'linux'. Auto-detects if not provided.
+    """
     tmp = tempfile.NamedTemporaryFile(suffix=".yaml", mode="w", delete=False)
     tmp.write(yaml_content)
     tmp.close()
-    try:
-        detected = detect_os(tmp.name)
-        resolved = os_type if os_type in ("windows", "linux") else detected
-        skill_script = Path(__file__).parent.parent / "skills" / "check-vm-config" / "check_vm_config.py"
-        result = subprocess.run(
-            ["python3", str(skill_script), tmp.name],
-            capture_output=True, text=True, timeout=30
-        )
-        output = result.stdout if result.stdout else result.stderr
-        return {
-            "severity": "CRITICAL" if "❌" in output else "PASS",
-            "detected_os": detected,
-            "used_os": resolved,
-            "table": output,
-            "summary": f"VM config checked as {resolved}",
-        }
-    finally:
-        Path(tmp.name).unlink(missing_ok=True)
+    return _run_vm_config_check(tmp.name, os_type, cleanup=True)

@@ -109,8 +109,11 @@ class GeminiAgent:
         from google.genai import types
         self.history.append(types.Content(role="user", parts=[types.Part(text=user_message)]))
 
+        first_turn = True
         while True:
-            _thinking("Thinking...")
+            if first_turn:
+                _thinking("Thinking...")
+                first_turn = False
             response = self.client.models.generate_content(
                 model="gemini-2.5-flash",
                 contents=self.history,
@@ -166,8 +169,11 @@ class ClaudeAgent:
     def chat(self, user_message: str) -> str:
         self.history.append({"role": "user", "content": user_message})
 
+        first_turn = True
         while True:
-            _thinking("Thinking...")
+            if first_turn:
+                _thinking("Thinking...")
+                first_turn = False
             response = self.client.messages.create(
                 model=self.model,
                 max_tokens=8096,

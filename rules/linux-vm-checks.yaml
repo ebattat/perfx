@@ -3,16 +3,15 @@
 # Reference: https://developers.redhat.com/blog/2025/06/23/feature-introduction-multiple-iothreads-openshift-virtualization
 
 devices:
-  blockMultiQueue: true
-  networkInterfaceMultiqueue: true
   disk:
-    root_bus: virtio               # root disk (bootOrder: 1) must use virtio
-    root_cache: none               # cache: none on root disk — prevents silent switch to buffered IO after live migration
-  NIC:
-    model: virtio                  # NEVER use e1000 or e1000e — causes significant network performance degradation
+    bus: virtio                         # virtio = best performance, NEVER use sata
 
+cpu:
+  sockets: 1                            # set all vCPUs in cores, not sockets — sockets: 1, threads: 1
+  threads: 1
+
+evictionStrategy: LiveMigrate           # optional — WARNING if missing; ensures VM is live migrated on node drain
+
+ioThreadsPolicy: supplementalPool       # OCP 4.19+ — offloads IO from vCPU threads
 ioThreads:
-  supplementalPoolThreadCount: required   # must be set; value depends on vCPU count (start at 4)
-ioThreadsPolicy: supplementalPool
-
-evictionStrategy: LiveMigrate      # optional — WARNING if missing; ensures VM is live migrated on node drain
+  supplementalPoolThreadCount: required # must be set; value depends on vCPU count (start at 4)
