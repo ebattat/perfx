@@ -320,6 +320,15 @@ def check(vm_path):
     else:
         _ok("ioThreads", "supplementalPoolThreadCount")
 
+    # ── evictionStrategy (optional) ──────────────────────────────────────────
+    spec = (doc.get("spec") or {}).get("template", {}).get("spec", {})
+    eviction = spec.get("evictionStrategy")
+    if checks.get("evictionStrategy") == "LiveMigrate":
+        if eviction != "LiveMigrate":
+            _warn("spec", "evictionStrategy", f"={eviction!r} — set to 'LiveMigrate' to avoid shutdown on node drain")
+        else:
+            _ok("spec", "evictionStrategy")
+
     # ── hyperv enlightenments ─────────────────────────────────────────────────
     hyperv_rules = checks.get("features", {}).get("hyperv", {})
     required_hv = [k for k, v in hyperv_rules.items() if v == "required" or isinstance(v, dict)]
@@ -427,6 +436,11 @@ def check(vm_path):
     nic_str = ", ".join(sorted(nic_models)) if nic_models else "virtio (default)"
     row("NIC model", nic_str, "virtio",
         "❌ WRONG MODEL" if bad_nics else "✅ OK")
+
+    # evictionStrategy (optional)
+    if checks.get("evictionStrategy") == "LiveMigrate":
+        row("evictionStrategy", eviction or "not set", "LiveMigrate",
+            "✅ OK" if eviction == "LiveMigrate" else "⚠️ NOT SET — VM may be shut down on node drain")
 
     # sort: ❌ first, ⚠️ second, ✅ last
     def _sort_key(r):
