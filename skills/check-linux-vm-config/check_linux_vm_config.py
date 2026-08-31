@@ -3,6 +3,7 @@
 Check Linux VM YAML configuration against rules/linux-vm-checks.yaml.
 Usage: python3 check_linux_vm_config.py <customer-vm.yaml>
 """
+import os
 import sys
 import re
 from datetime import datetime
@@ -16,7 +17,7 @@ except ImportError:
 
 
 RULES_DIR   = Path(__file__).parent.parent.parent / "rules"
-LOGS_DIR    = Path(__file__).parent.parent.parent / "logs"
+LOGS_DIR    = Path(os.environ.get("PERFX_LOGS_DIR", Path(__file__).parent.parent.parent / "logs"))
 CHECKS_FILE = RULES_DIR / "linux-vm-checks.yaml"
 
 

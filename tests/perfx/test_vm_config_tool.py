@@ -624,27 +624,31 @@ class TestRunVmConfigCheck:
                   disks: []
     """)
 
-    def test_windows_yaml_runs_windows_checker(self, tmp_path):
+    def test_windows_yaml_runs_windows_checker(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("PERFX_LOGS_DIR", str(tmp_path))
         f = tmp_path / "win.yaml"
         f.write_text(self.WINDOWS_YAML)
         result = vm_mod.check_vm_config_from_path(str(f), os_type="windows")
         assert result["used_os"] == "windows"
         assert "WINDOWS" in result["table"] or result["severity"] in ("CRITICAL", "PASS")
 
-    def test_linux_yaml_runs_linux_checker(self, tmp_path):
+    def test_linux_yaml_runs_linux_checker(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("PERFX_LOGS_DIR", str(tmp_path))
         f = tmp_path / "linux.yaml"
         f.write_text(self.LINUX_YAML)
         result = vm_mod.check_vm_config_from_path(str(f), os_type="linux")
         assert result["used_os"] == "linux"
         assert "LINUX" in result["table"] or result["severity"] in ("CRITICAL", "PASS")
 
-    def test_auto_detects_windows(self, tmp_path):
+    def test_auto_detects_windows(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("PERFX_LOGS_DIR", str(tmp_path))
         f = tmp_path / "win.yaml"
         f.write_text(self.WINDOWS_YAML)
         result = vm_mod.check_vm_config_from_path(str(f))
         assert result["detected_os"] == "windows"
 
-    def test_auto_detects_linux(self, tmp_path):
+    def test_auto_detects_linux(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("PERFX_LOGS_DIR", str(tmp_path))
         f = tmp_path / "linux.yaml"
         f.write_text(self.LINUX_YAML)
         result = vm_mod.check_vm_config_from_path(str(f))

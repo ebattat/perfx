@@ -3,6 +3,7 @@
 Check Windows VM YAML configuration against rules/windows-vm-checks.yaml.
 Usage: python3 check_windows_vm_config.py <customer-vm.yaml>
 """
+import os
 import sys
 import re
 from datetime import datetime
@@ -16,7 +17,7 @@ except ImportError:
 
 
 RULES_DIR = Path(__file__).parent.parent.parent / "rules"
-LOGS_DIR  = Path(__file__).parent.parent.parent / "logs"
+LOGS_DIR  = Path(os.environ.get("PERFX_LOGS_DIR", Path(__file__).parent.parent.parent / "logs"))
 CHECKS_FILE = RULES_DIR / "windows-vm-checks.yaml"
 
 def _load(path):
