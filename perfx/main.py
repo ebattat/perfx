@@ -21,7 +21,7 @@ def _save_report(content: str, fmt: str, output_dir: str = None):
     ext = "md" if fmt == "markdown" else "log"
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     path = report_dir / f"perfx_report_{timestamp}.{ext}"
-    path.write_text(content)
+    path.write_text(content, encoding="utf-8")
     log.info("Report saved to %s", path)
     print(f"\nReport saved to: {path}")
 
@@ -164,7 +164,7 @@ def main():
             # only write log when a skill is invoked (starts with /)
             if user_input.startswith("/"):
                 if session_file is None:
-                    session_file = open(session_log, "w")
+                    session_file = open(session_log, "w", encoding="utf-8")
                     session_file.write(f"PerfX Session — {session_ts}\n{'='*60}\n\n")
                     print(f"Session log: {session_log}\n")
                 session_file.write(f"You: {user_input}\n\nAgent: {response}\n\n{'─'*60}\n\n")
