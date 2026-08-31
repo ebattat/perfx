@@ -1,3 +1,4 @@
+import os
 import re
 import tempfile
 from datetime import datetime
@@ -438,7 +439,8 @@ def _run_vm_config_check(path: str, os_type: str = None, cleanup: bool = False) 
             skill_script = Path(__file__).parent.parent / "skills" / "check-windows-vm-config" / "check_windows_vm_config.py"
         result = subprocess.run(
             ["python3", str(skill_script), path],
-            capture_output=True, text=True, timeout=30
+            capture_output=True, text=True, encoding="utf-8", timeout=30,
+            env={**os.environ, "PYTHONUTF8": "1"}
         )
         full_output = result.stdout if result.stdout else result.stderr
         lines = full_output.splitlines()
@@ -477,11 +479,30 @@ def _run_vm_config_check(path: str, os_type: str = None, cleanup: bool = False) 
         if findings:
             compact.append("\nFindings:")
             compact.extend(f"  {f}" for f in findings)
+        # extract GUEST-SIDE STEPS verbatim so agent does not rephrase them
+        guest_steps = []
+        in_guest = False
+        passed_header_sep = False
+        for ln in lines:
+            if "GUEST-SIDE STEPS" in ln:
+                in_guest = True
+                continue
+            if in_guest:
+                if ln.startswith("─"):
+                    if not passed_header_sep:
+                        passed_header_sep = True  # skip the separator under the header
+                        continue
+                    break  # next section separator — stop
+                guest_steps.append(ln)
+
         if summary_line:
             compact.append(f"\n{summary_line.strip()}")
+        if guest_steps:
+            compact.append("")
+            compact.extend(guest_steps)
         if log_line:
             compact.append(log_line)
-        compact.append("\nINSTRUCTION: Reply in 2 sentences max — state severity and tell the user the full report is in the log file. Do not list individual findings.")
+        compact.append("\nINSTRUCTION: Show the GUEST-SIDE STEPS above exactly as written. State severity in 1 sentence. Do not rephrase or use emoji codes like :wrench:.")
 
         return {
             "severity": "CRITICAL" if "❌" in full_output else "PASS",
