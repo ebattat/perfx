@@ -538,7 +538,9 @@ def main():
         name = args.vm or Path(vm_path).stem
         out  = LOGS_DIR / f"vm_config_audit_{name}_{ts}.log"
         out.write_text(report)
-        print(f"\nReport saved to: {out}")
+        print(f"\n{'─' * 65}")
+        print(f"CORRECTED VM YAML saved to: {out}")
+        print(f"Review and apply with: oc apply -f {out}")
     finally:
         if fetched_tmp:
             Path(fetched_tmp).unlink(missing_ok=True)
