@@ -433,25 +433,50 @@ def check_vm_config_from_content(yaml_content: str, os_type: str = None) -> dict
             ["python3", str(skill_script), tmp.name],
             capture_output=True, text=True, timeout=30
         )
-        output = result.stdout if result.stdout else result.stderr
-        # strip the corrected YAML block — it's already saved to the log file
-        # and returning it inflates the tool result with hundreds of lines
-        if "CORRECTED VM YAML" in output:
-            output = output[:output.index("CORRECTED VM YAML")].rstrip()
-            output += "\n\n(Corrected YAML saved to log file — see 'Report saved to:' line below)"
-        # preserve the log path line from the end of stdout
-        log_line = next(
-            (ln for ln in (result.stdout or "").splitlines() if "Report saved to:" in ln),
-            ""
-        )
-        if log_line and log_line not in output:
-            output += f"\n{log_line}"
+        full_output = result.stdout if result.stdout else result.stderr
+        lines = full_output.splitlines()
+
+        # extract key metrics
+        result_line = next((l for l in lines if l.startswith("Result")), "")
+        severity_line = next((l for l in lines if l.startswith("Severity")), "")
+        summary_line = next((l for l in lines if "checks passed" in l), "")
+        log_line = next((l for l in lines if "Report saved to:" in l), "")
+
+        # extract only the FINDINGS lines (skip table — too many rows)
+        findings = []
+        in_findings = False
+        for ln in lines:
+            if "FINDINGS:" in ln:
+                in_findings = True
+                continue
+            if in_findings:
+                stripped = ln.strip()
+                if not stripped or stripped.startswith("─") or stripped.startswith("Setting"):
+                    continue
+                if stripped.startswith("❌") or stripped.startswith("⚠️"):
+                    findings.append(stripped)
+                elif findings:
+                    break
+
+        compact = []
+        if result_line:
+            compact.append(result_line)
+        if severity_line:
+            compact.append(severity_line)
+        if findings:
+            compact.append("\nFindings:")
+            compact.extend(f"  {f}" for f in findings)
+        if summary_line:
+            compact.append(f"\n{summary_line.strip()}")
+        if log_line:
+            compact.append(log_line)
+
         return {
-            "severity": "CRITICAL" if "❌" in output else "PASS",
+            "severity": "CRITICAL" if "❌" in full_output else "PASS",
             "detected_os": detected,
             "used_os": resolved,
-            "table": output,
-            "summary": f"VM config checked as {resolved}",
+            "table": "\n".join(compact),
+            "summary": f"VM config checked as {resolved}. Full report: {log_line}",
         }
     finally:
         Path(tmp.name).unlink(missing_ok=True)
