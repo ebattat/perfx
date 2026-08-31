@@ -552,12 +552,31 @@ class TestDetectOs:
         f.write_text(yaml_text)
         assert detect_os(str(f)) == "windows"
 
-    def test_detects_linux_by_default(self, tmp_path):
+    def test_detects_windows_when_ambiguous(self, tmp_path):
+        yaml_text = textwrap.dedent("""\
+            metadata:
+              name: unknown-vm
+            spec:
+              template:
+                spec:
+                  domain:
+                    devices:
+                      disks: []
+        """)
+        f = tmp_path / "vm.yaml"
+        f.write_text(yaml_text)
+        # no hyperv, no preference, no OS label → default to windows (full check)
+        assert detect_os(str(f)) == "windows"
+
+    def test_detects_linux_via_os_label(self, tmp_path):
         yaml_text = textwrap.dedent("""\
             metadata:
               name: linux-vm
             spec:
               template:
+                metadata:
+                  annotations:
+                    vm.kubevirt.io/os: rhel9
                 spec:
                   domain:
                     devices:

@@ -14,13 +14,15 @@ HYPERV_KEYS = [
 def detect_os(path: str) -> str:
     """Detect whether a VM YAML is for Windows or Linux.
 
-    Returns 'windows' if hyperv features or a windows preference are present,
-    otherwise returns 'linux'.
+    Returns 'windows' if hyperv features, a windows preference, or a windows
+    OS label are present. Returns 'linux' only when the OS label explicitly
+    confirms it. Falls back to 'windows' when detection is ambiguous so the
+    more comprehensive Windows check runs rather than being silently skipped.
     """
     try:
         doc = _load_yaml(path)
     except Exception:
-        return "linux"
+        return "windows"
     domain = (
         (doc.get("spec") or {})
         .get("template", {})
@@ -34,7 +36,20 @@ def detect_os(path: str) -> str:
     preference = (doc.get("spec") or {}).get("preference", {}).get("name", "")
     if "windows" in preference.lower():
         return "windows"
-    return "linux"
+    # vm.kubevirt.io/os label — only trust an explicit non-empty value
+    os_label = (
+        (doc.get("spec") or {})
+        .get("template", {})
+        .get("metadata", {})
+        .get("annotations", {})
+        .get("vm.kubevirt.io/os", "")
+    )
+    if os_label and "windows" in os_label.lower():
+        return "windows"
+    if os_label and os_label not in ("", "__template__"):
+        return "linux"
+    # ambiguous — default to windows so the full check runs
+    return "windows"
 
 
 CLOCK_CHECKS = {
