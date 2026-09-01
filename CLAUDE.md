@@ -37,6 +37,7 @@ Use the `/add-tests` skill. Key rules:
 When creating a new skill that generates log files:
 
 ```python
+import os
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -44,7 +45,7 @@ from pathlib import Path
 LOGS_DIR = Path(os.environ.get("PERFX_LOGS_DIR", Path(__file__).parent.parent.parent / "logs"))
 
 # In your main() function:
-LOGS_DIR.mkdir(exist_ok=True)
+LOGS_DIR.mkdir(parents=True, exist_ok=True)  # Create parent dirs if needed
 run_uuid = uuid.uuid4().hex[:8]
 ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 out = LOGS_DIR / f"perfx_{run_uuid}_{ts}.log"
@@ -52,7 +53,7 @@ out.write_text(report, encoding="utf-8")
 print(f"\nReport saved to: {out}")
 ```
 
-**Never use skill-specific prefixes** like `perfx_windows_`, `perfx_linux_`, or `perfx_vm_audit_`. The UUID ensures uniqueness across concurrent runs.
+**Never use skill-specific prefixes** like `perfx_windows_`, `perfx_linux_`, or `perfx_vm_audit_`. The 8-character UUID combined with timestamp ensures uniqueness across concurrent runs (collision probability < 1 in 4 billion).
 
 ## Knowledge base rule — ALWAYS enforce
 

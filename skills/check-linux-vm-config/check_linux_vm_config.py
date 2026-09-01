@@ -360,7 +360,7 @@ def check(vm_path):
     lines.append("RECOMMENDATION")
     lines.append("─" * 65)
     if findings:
-        lines.append("  Apply the fixes shown above.")
+        lines.append("  Apply the fixes shown in CORRECTED VM YAML section below.")
     else:
         lines.append("  Configuration matches recommended template.")
 
