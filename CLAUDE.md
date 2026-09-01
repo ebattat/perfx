@@ -30,6 +30,30 @@ Use the `/add-tests` skill. Key rules:
 - Test files mirror source: `perfx/foo.py` → `tests/perfx/test_foo.py`, `skills/foo/foo.py` → `tests/perfx/skills/foo/test_foo.py`
 - Verify with: `.venv/bin/pytest tests/ --cov=perfx -q`
 
+## Logging standard — ALWAYS enforce
+
+**All skills must use the unified logging format: `perfx_{uuid}_{datetime}.log`**
+
+When creating a new skill that generates log files:
+
+```python
+import uuid
+from datetime import datetime
+from pathlib import Path
+
+LOGS_DIR = Path(os.environ.get("PERFX_LOGS_DIR", Path(__file__).parent.parent.parent / "logs"))
+
+# In your main() function:
+LOGS_DIR.mkdir(exist_ok=True)
+run_uuid = uuid.uuid4().hex[:8]
+ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+out = LOGS_DIR / f"perfx_{run_uuid}_{ts}.log"
+out.write_text(report, encoding="utf-8")
+print(f"\nReport saved to: {out}")
+```
+
+**Never use skill-specific prefixes** like `perfx_windows_`, `perfx_linux_`, or `perfx_vm_audit_`. The UUID ensures uniqueness across concurrent runs.
+
 ## Knowledge base rule — ALWAYS enforce
 
 **Every new or updated rule/methodology file must be reflected in the relevant SKILL.md files.**
