@@ -35,5 +35,5 @@ special_checks:
   disk_bus: true        # checks all disks[].disk.bus == virtio
   nic_model: true       # checks all interfaces[].model != e1000/e1000e/rtl8139
   io_threads_count: true  # supplementalPoolThreadCount calculated from vCPU count
-  block_multi_queue: true  # devices.blockMultiQueue (add to checks: above to enable)
-  network_multiqueue: true  # devices.networkInterfaceMultiqueue (add to checks: above to enable)
+  block_multi_queue: false  # set to true to enable blockMultiQueue check for Linux
+  network_multiqueue: false  # set to true to enable networkInterfaceMultiqueue check for Linux

@@ -56,6 +56,17 @@ def _to_int(v, default=1):
         return default
 
 
+def _version_gte(actual, threshold):
+    """Compare version strings like 'pc-q35-rhel9.10.0' using integer tuple comparison."""
+    import re
+    def _parts(s):
+        return tuple(int(x) if x.isdigit() else x for x in re.split(r'(\d+)', s))
+    try:
+        return _parts(actual) >= _parts(threshold)
+    except TypeError:
+        return actual >= threshold
+
+
 # ── generic evaluator (data-driven checks from rules YAML) ───────────────────
 
 def _get_path(root, path):
@@ -101,6 +112,100 @@ def _eval_rule(domain, spec, rule):
     elif isinstance(expected, str) and expected.startswith("~gte:"):
         threshold    = expected[5:-1]
         ok           = bool(actual) and str(actual) >= threshold
+        actual_str   = str(actual) if actual is not None else "not set"
+        expected_str = f"≥{threshold}"
+    else:
+        ok           = actual == expected
+        actual_str   = str(actual).lower() if isinstance(actual, bool) else (str(actual) if actual is not None else "not set")
+        expected_str = str(expected).lower() if isinstance(expected, bool) else str(expected)
+
+    if ok:
+        status = "✅ OK"
+    elif severity == "FAIL":
+        status = "❌ MISSING" if actual is None else "❌ WRONG"
+    else:
+        status = f"⚠️ {msg}" if msg else "⚠️ CHECK"
+
+    return ok, actual, actual_str, expected_str, status
+
+
+def _eval_checks(domain, spec, checks_list):
+    """Run all generic rules. Returns (findings, passes, table_rows)."""
+    findings   = []
+    passes     = []
+    table_rows = []
+
+    for rule in checks_list:
+        result = _eval_rule(domain, spec, rule)
+        if result is None:
+            continue  # requires: guard not satisfied — skip
+        ok, actual, actual_str, expected_str, status = result
+        label   = rule.get("label", rule["path"].split(".")[-1])
+        section = rule.get("section", rule["path"].split(".")[-1])
+        msg     = rule.get("message", "")
+        severity = rule.get("severity", "FAIL")
+
+        table_rows.append((label, actual_str, expected_str, status))
+
+        if ok:
+            passes.append((section, label))
+        elif severity == "FAIL":
+            detail = f"={actual!r} (want {rule['expected']!r})" if actual is not None else f"missing (want {rule['expected']!r})"
+            findings.append(("FAIL", section, label, detail))
+        else:
+            detail = f"={actual!r} — {msg}" if msg else f"={actual!r} (want {rule['expected']!r})"
+            findings.append(("WARN", section, label, detail))
+
+    return findings, passes, table_rows
+
+
+# ── corrected YAML generation ─────────────────────────────────────────────────
+
+# ── generic evaluator (data-driven checks from rules YAML) ───────────────────
+
+def _get_path(root, path):
+    """Traverse dot-separated path in a nested dict; return None if missing."""
+    value = root
+    for key in path.split("."):
+        if not isinstance(value, dict):
+            return None
+        value = value.get(key)
+    return value
+
+
+def _eval_rule(domain, spec, rule):
+    """Evaluate one rule. Returns (ok, actual_val, actual_str, expected_str, status).
+    Returns None when a 'requires:' path guard is not satisfied (rule is skipped)."""
+    path     = rule["path"]
+    expected = rule["expected"]
+    label    = rule.get("label", path.split(".")[-1])
+    severity = rule.get("severity", "FAIL")
+    msg      = rule.get("message", "")
+
+    # optional guard: skip this rule if the required parent path is absent
+    requires = rule.get("requires")
+    if requires:
+        req_root = spec if requires.startswith("spec:") else domain
+        req_path = requires[5:] if requires.startswith("spec:") else requires
+        if _get_path(req_root, req_path) is None:
+            return None
+
+    root       = spec if path.startswith("spec:") else domain
+    clean_path = path[5:] if path.startswith("spec:") else path
+    actual     = _get_path(root, clean_path)
+
+    if expected == "~present~":
+        ok          = actual is not None
+        actual_str  = "present" if ok else "missing"
+        expected_str = "required"
+    elif isinstance(expected, str) and expected.startswith("~lte:"):
+        n            = _to_int(expected[5:-1], 1)
+        ok           = actual is None or _to_int(actual, n + 1) <= n
+        actual_str   = str(actual) if actual is not None else "not set (default ≤)"
+        expected_str = f"≤{n}"
+    elif isinstance(expected, str) and expected.startswith("~gte:"):
+        threshold    = expected[5:-1]
+        ok           = bool(actual) and _version_gte(str(actual), threshold)
         actual_str   = str(actual) if actual is not None else "not set"
         expected_str = f"≥{threshold}"
     else:
