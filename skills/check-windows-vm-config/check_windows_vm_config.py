@@ -445,17 +445,25 @@ def check(vm_path):
 
     lines.append("")
     lines.append("─" * 65)
-    lines.append("RECOMMENDATION")
+    lines.append("FINDINGS")
     lines.append("─" * 65)
     if findings:
         lines.append(f"  Reference: {CHECKS_FILE.relative_to(CHECKS_FILE.parent.parent)}")
         lines.append("")
-        lines.append("  FINDINGS:")
         lines.append(f"  {'Setting':<35} {'Issue'}")
         lines.append(f"  {'─'*35} {'─'*40}")
         for sev, section, key, detail in findings:
             prefix = "❌" if sev == "FAIL" else "⚠️"
             lines.append(f"  {prefix} {section+'.'+key:<33} {detail}")
+    else:
+        lines.append("  No issues found.")
+
+    lines.append("")
+    lines.append("─" * 65)
+    lines.append("RECOMMENDATION")
+    lines.append("─" * 65)
+    if findings:
+        lines.append("  Apply the fixes shown in CORRECTED VM YAML section below.")
     else:
         lines.append("  Configuration matches recommended template.")
 
