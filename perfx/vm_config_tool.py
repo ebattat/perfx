@@ -457,16 +457,19 @@ def _run_vm_config_check(path: str, os_type: str = None, cleanup: bool = False) 
         findings = []
         in_findings = False
         for ln in lines:
-            if "FINDINGS:" in ln:
+            if ln.strip() == "FINDINGS" or "FINDINGS:" in ln:
                 in_findings = True
                 continue
             if in_findings:
                 stripped = ln.strip()
-                if not stripped or stripped.startswith("─") or stripped.startswith("Setting"):
+                # Skip separators, headers, and empty "No issues found" messages
+                if not stripped or stripped.startswith("─") or stripped.startswith("Setting") or "No issues found" in stripped or "Reference:" in stripped:
                     continue
+                # Found a finding line
                 if stripped.startswith("❌") or stripped.startswith("⚠️"):
                     findings.append(stripped)
-                elif findings:
+                # Stop when we hit the next section
+                elif findings and (stripped == "RECOMMENDATION" or stripped.startswith("─")):
                     break
 
         critical_count = sum(1 for f in findings if f.startswith("❌"))
