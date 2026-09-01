@@ -7,6 +7,7 @@ Add new checks by editing rules/windows-vm-checks.yaml — no Python change need
 import os
 import sys
 import re
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -566,8 +567,9 @@ def main():
     print(report)
 
     LOGS_DIR.mkdir(exist_ok=True)
+    run_uuid = uuid.uuid4().hex[:8]
     ts  = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    out = LOGS_DIR / f"perfx_windows_{ts}.log"
+    out = LOGS_DIR / f"perfx_{run_uuid}_{ts}.log"
     out.write_text(report, encoding="utf-8")
     print(f"\nReport saved to: {out}")
 
