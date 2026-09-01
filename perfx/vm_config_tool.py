@@ -1,5 +1,6 @@
 import os
 import re
+import uuid
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -76,8 +77,9 @@ def _row(setting, customer, recommended, status):
 def _save_report(vm_name: str, os_type: str, rows: list, summary: str) -> str:
     LOGS_DIR.mkdir(exist_ok=True)
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    run_uuid = uuid.uuid4().hex[:8]
     ts_file = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    path = LOGS_DIR / f"perfx_vm_audit_{ts_file}.log"
+    path = LOGS_DIR / f"perfx_{run_uuid}_{ts_file}.log"
     col_w = [28, 45, 48, 38]
     header = (
         f"  {'Setting':<{col_w[0]}} {'Customer VM':<{col_w[1]}} {'Recommended':<{col_w[2]}} {'Status'}\n"
