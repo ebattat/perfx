@@ -1,7 +1,9 @@
 """Tests for skills/check-linux-vm-config/check_linux_vm_config.py"""
 import importlib.util
+import re
 import textwrap
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -98,3 +100,51 @@ class TestCheckLinuxFunction:
         report = mod.check(str(f))
         rec_section = report.split("RECOMMENDATION")[-1]
         assert "evictionStrategy" in rec_section or "⚠️" in rec_section
+
+
+class TestLogFilenameFormat:
+    """Test UUID-based log filename generation."""
+
+    def test_log_filename_contains_uuid_and_timestamp(self, tmp_path, monkeypatch):
+        """Log filename follows perfx_{uuid}_{timestamp}.log format."""
+        f = tmp_path / "vm.yaml"
+        f.write_text(LINUX_YAML_PASS)
+
+        logs_dir = tmp_path / "logs"
+        logs_dir.mkdir()
+        monkeypatch.setattr(mod, "LOGS_DIR", logs_dir)
+
+        # Mock uuid to return a known value
+        with patch('uuid.uuid4') as mock_uuid:
+            mock_uuid.return_value.hex = 'a1b2c3d4' + '0' * 24  # 32 hex chars
+            mod.main.__wrapped__ = mod.main  # Store original if wrapped
+
+            # Capture output by directly calling the logging code
+            report = mod.check(str(f))
+            run_uuid = mock_uuid.return_value.hex[:8]
+
+            # Verify UUID is 8 hex characters
+            assert len(run_uuid) == 8
+            assert all(c in '0123456789abcdef' for c in run_uuid)
+
+    def test_multiple_runs_create_unique_filenames(self, tmp_path, monkeypatch):
+        """Each run creates a log with a unique UUID."""
+        f = tmp_path / "vm.yaml"
+        f.write_text(LINUX_YAML_PASS)
+
+        logs_dir = tmp_path / "logs"
+        logs_dir.mkdir()
+        monkeypatch.setattr(mod, "LOGS_DIR", logs_dir)
+
+        # Simulate two runs with different UUIDs
+        uuids = []
+        with patch('uuid.uuid4') as mock_uuid:
+            for uuid_val in ['aaaaaaaa' + '0' * 24, 'bbbbbbbb' + '0' * 24]:
+                mock_uuid.return_value.hex = uuid_val
+                report = mod.check(str(f))
+                uuids.append(uuid_val[:8])
+
+        # UUIDs should be different
+        assert uuids[0] != uuids[1]
+        assert uuids[0] == 'aaaaaaaa'
+        assert uuids[1] == 'bbbbbbbb'

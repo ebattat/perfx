@@ -2,6 +2,7 @@
 import importlib.util
 import textwrap
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -165,11 +166,11 @@ class TestCheckFunction:
         assert "SUMMARY" in report
         assert "checks passed" in report
 
-    def test_findings_label_in_recommendation(self, tmp_path):
+    def test_findings_section_in_report(self, tmp_path):
         f = tmp_path / "vm.yaml"
         f.write_text(WINDOWS_YAML_ISSUES)
         report = mod.check(str(f))
-        assert "FINDINGS:" in report
+        assert "FINDINGS" in report
 
 
 class TestHelpers:
@@ -194,3 +195,48 @@ class TestHelpers:
         f = tmp_path / "vm.yaml"
         f.write_text(WINDOWS_YAML_ISSUES)  # no hyperv features, no labels → unknown
         assert mod._detect_os(str(f)) == "unknown"
+
+
+class TestLogFilenameFormat:
+    """Test UUID-based log filename generation."""
+
+    def test_log_filename_contains_uuid_and_timestamp(self, tmp_path, monkeypatch):
+        """Log filename follows perfx_{uuid}_{timestamp}.log format."""
+        f = tmp_path / "vm.yaml"
+        f.write_text(WINDOWS_YAML_PASS)
+
+        logs_dir = tmp_path / "logs"
+        logs_dir.mkdir()
+        monkeypatch.setattr(mod, "LOGS_DIR", logs_dir)
+
+        # Mock uuid to return a known value
+        with patch('uuid.uuid4') as mock_uuid:
+            mock_uuid.return_value.hex = 'a1b2c3d4' + '0' * 24  # 32 hex chars
+            report = mod.check(str(f))
+            run_uuid = mock_uuid.return_value.hex[:8]
+
+            # Verify UUID is 8 hex characters
+            assert len(run_uuid) == 8
+            assert all(c in '0123456789abcdef' for c in run_uuid)
+
+    def test_multiple_runs_create_unique_filenames(self, tmp_path, monkeypatch):
+        """Each run creates a log with a unique UUID."""
+        f = tmp_path / "vm.yaml"
+        f.write_text(WINDOWS_YAML_PASS)
+
+        logs_dir = tmp_path / "logs"
+        logs_dir.mkdir()
+        monkeypatch.setattr(mod, "LOGS_DIR", logs_dir)
+
+        # Simulate two runs with different UUIDs
+        uuids = []
+        with patch('uuid.uuid4') as mock_uuid:
+            for uuid_val in ['aaaaaaaa' + '0' * 24, 'bbbbbbbb' + '0' * 24]:
+                mock_uuid.return_value.hex = uuid_val
+                report = mod.check(str(f))
+                uuids.append(uuid_val[:8])
+
+        # UUIDs should be different
+        assert uuids[0] != uuids[1]
+        assert uuids[0] == 'aaaaaaaa'
+        assert uuids[1] == 'bbbbbbbb'

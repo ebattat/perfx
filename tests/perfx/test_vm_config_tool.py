@@ -670,3 +670,25 @@ class TestSaveReport:
         assert "WINDOWS" in content
         assert "PASS" in content
         assert "hyperv" in content
+
+    def test_filename_follows_uuid_timestamp_format(self, tmp_path, monkeypatch):
+        """Log filename follows perfx_{uuid}_{timestamp}.log format."""
+        import re
+        monkeypatch.setattr(vm_mod, "LOGS_DIR", tmp_path)
+        rows = [{"setting": "test", "customer": "x", "recommended": "y", "status": "✅"}]
+        log_path = _save_report("test-vm", "linux", rows, "OK")
+        filename = Path(log_path).name
+        # Format: perfx_{8-hex-chars}_{YYYY-MM-DD_HH-MM-SS}.log
+        pattern = r'^perfx_[0-9a-f]{8}_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.log$'
+        assert re.match(pattern, filename), f"Filename {filename} doesn't match expected format"
+
+    def test_multiple_saves_create_unique_filenames(self, tmp_path, monkeypatch):
+        """Each save creates a unique log file."""
+        monkeypatch.setattr(vm_mod, "LOGS_DIR", tmp_path)
+        rows = [{"setting": "test", "customer": "x", "recommended": "y", "status": "✅"}]
+        log1 = _save_report("vm1", "linux", rows, "OK")
+        log2 = _save_report("vm2", "linux", rows, "OK")
+        # Different UUIDs ensure different filenames
+        assert log1 != log2
+        assert Path(log1).exists()
+        assert Path(log2).exists()
