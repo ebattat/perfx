@@ -152,6 +152,7 @@ If you have a Windows VM with I/O or CPU degradation, verify that hyperv enlight
 
 **On the KVM host while VM is running:**
 ```bash
+# Windows VMs only - run while VM is running
 ps -eaf |grep qemu-kvm |sed -e 's/,/ /g' |xargs -n1 |grep hv- | sort | uniq -c
 ```
 
@@ -419,7 +420,7 @@ oc get vm <vm_name> -o yaml | grep -E "ioThreadsPolicy|blockMultiQueue|autoattac
 
 **Verify hyperv enlightenments are active (Windows VMs only):**
 ```bash
-# From KVM host while VM is running
+# Windows VMs only - run from KVM host while VM is running
 ps -eaf |grep qemu-kvm |sed -e 's/,/ /g' |xargs -n1 |grep hv- | sort | uniq -c
 
 # Expected: 14 hv-* flags with =on, including hv-spinlocks=0x1fff and hv-stimer-direct=on

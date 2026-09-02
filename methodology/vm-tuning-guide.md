@@ -314,11 +314,12 @@ msinfo32
 # Look for "Hyper-V Requirements" section
 ```
 
-**Verification from KVM host (while VM is running):**
+**Verification from KVM host (Windows VMs only - while VM is running):**
 
 If you have Windows VM I/O or CPU degradation, verify hyperv enlightenments are **actually active** on the running qemu process:
 
 ```bash
+# Windows VMs only - run while VM is running
 ps -eaf |grep qemu-kvm |sed -e 's/,/ /g' |xargs -n1 |grep hv- | sort | uniq -c
 ```
 
